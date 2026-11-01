@@ -55,3 +55,7 @@ Thumbs.db
 
 # mdBook output (docs site)
 book/
+
+# Local optional artwork and native helper build products.
+/src/assets/emojis/zalo/sprites.bin
+/native/macos/build/

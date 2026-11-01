@@ -10,18 +10,28 @@ mod chat;
 mod clock;
 mod crypto;
 mod data_dir;
+mod delivery_receipts;
 mod endpoints;
 mod gui;
 mod logger;
 mod login;
 mod media;
+mod media_resources;
 mod message_model;
+mod message_navigation;
+mod native_notifications;
+mod original_reactions;
 mod param_cipher;
+mod presence;
 mod qr;
+mod reaction_journal;
 mod reactions;
+mod read_receipts;
+mod runtime_state;
 mod session;
 mod socket;
 mod store;
+mod store_v2;
 mod tui;
 mod ui;
 mod unread;
@@ -324,15 +334,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-
-mod message_navigation;
-
-pub mod delivery_receipts;
-mod media_resources;
-pub mod native_notifications;
-pub mod original_reactions;
-pub mod presence;
-pub mod reaction_journal;
-pub mod read_receipts;
-pub mod runtime_state;
-pub mod store_v2;

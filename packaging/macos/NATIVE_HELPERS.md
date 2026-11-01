@@ -15,7 +15,7 @@ python3 native/macos/prepare-history-assets.py --local-use --output /path/to/His
 python3 native/macos/prepare-history-assets.py --verify-only --output /path/to/HistoryCodecAssets
 ```
 
-Truyền `assetsDir` trong JSON `init` của helper, hoặc khi build local đặt `HISTORY_CODEC_ASSETS=/path/to/HistoryCodecAssets` để copy các byte đã xác minh vào app local. CI xóa biến này và validator public từ chối thư mục asset. Nếu phân phối public cần đầy đủ history, phải giải quyết quyền phân phối trước hoặc thay codec bằng implementation độc lập có kiểm chứng. Không tự công bố gói local này.
+Ứng dụng Rust nhận `ZL_HISTORY_CODEC_ASSETS=/absolute/path/HistoryCodecAssets` khi chạy; đường dẫn tương đối bị từ chối. Truyền `assetsDir` trong JSON `init` của helper, hoặc khi build local đặt `HISTORY_CODEC_ASSETS=/path/to/HistoryCodecAssets` để copy các byte đã xác minh vào app local. CI xóa biến này và validator public từ chối thư mục asset. Nếu phân phối public cần đầy đủ history, phải giải quyết quyền phân phối trước hoặc thay codec bằng implementation độc lập có kiểm chứng. Không tự công bố gói local này.
 
 ## Kiểm tra
 

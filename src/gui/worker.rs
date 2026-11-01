@@ -514,6 +514,15 @@ pub enum WorkerCmd {
     RefreshThreads,
     SyncDirectHistory,
     SyncGroupHistory,
+    SyncPhoneHistory {
+        generation: u64,
+    },
+    CancelPhoneHistory {
+        generation: u64,
+    },
+    WakeupPhoneHistory {
+        generation: u64,
+    },
     PollMessages {
         known_threads: Vec<(String, String, bool)>,
     },
@@ -967,6 +976,7 @@ pub(super) fn spawn_session_worker(
                     std::collections::HashMap::<(String, String, bool), String>::new(),
                 ));
                 let group_cloud_active = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashSet::<(String, String)>::new()));
+                let (phone_tx, mut phone_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, u8)>();
 
                 // 1) Real-time `zpw_ws` WebSocket loop for instant chat messages + VoIP events
                 {
@@ -985,12 +995,15 @@ pub(super) fn spawn_session_worker(
                         let mut history_sync = history::DirectHistorySync::default();
                         let mut group_history_sync = group_history::GroupHistorySync::default();
                         let mut phone_task: Option<tokio::task::JoinHandle<()>> = None;
+                        let mut phone_events: Option<tokio::sync::mpsc::UnboundedSender<crate::socket::WsEvent>> = None;
+                        let mut phone_wakeups: Option<(u64,tokio::sync::mpsc::UnboundedSender<()>)> = None;
                         loop {
                             let epoch = crate::runtime_state::registry().current();
                             if epoch != ws_epoch {
                                 ws_epoch = epoch.clone();
                                 ws_rx = None;
                                 ws_sek.clear();
+                                if let Some(task) = phone_task.take() { task.abort(); }
                             }
                             if epoch.account.is_empty() { tokio::time::sleep(Duration::from_millis(20)).await; continue; }
                             let s_snap = s_ws.lock().await.clone();
@@ -998,7 +1011,9 @@ pub(super) fn spawn_session_worker(
                             if s_snap.login.is_some() {
                                 let cur_sek = s_snap.zpw_sek.clone().unwrap_or_default();
                                 if !cur_sek.is_empty() && (ws_rx.is_none() || ws_sek != cur_sek) {
-                                        ws_sek = cur_sek;
+                                    if let Some(task) = phone_task.take() { task.abort(); }
+                                    phone_events = None;
+                                    ws_sek = cur_sek;
                                     let (events, commands) = crate::socket::spawn_with_history(s_snap.clone());
                                     ws_rx = Some(events);
                                     ws_commands = Some(commands);
@@ -1034,6 +1049,37 @@ pub(super) fn spawn_session_worker(
                                     dispatch_group_history_request(&mut group_history_sync, ws_commands.as_ref(), request, &gui_tx_ws);
                                     ctx_ws.request_repaint();
                                 }
+                                // Preserve FIFO: a wakeup must never overwrite a queued start/cancel.
+                                while let Ok((generation,action)) = phone_rx.try_recv() {
+                                    match action {
+                                        0 => {
+                                            if phone_wakeups.as_ref().is_some_and(|(current,_)| *current == generation) {
+                                                if let Some(task) = phone_task.take() { task.abort(); }
+                                                phone_events = None;
+                                                phone_wakeups = None;
+                                                let _ = gui_tx_ws.send(GuiEvent::PhoneHistoryStatus { generation, account: s_snap.login.as_ref().map(|l| l.uin.clone()).unwrap_or_default(), message: "Đã dừng đồng bộ; lịch sử đã nhận vẫn được giữ".into(), active: false });
+                                                ctx_ws.request_repaint();
+                                            }
+                                        }
+                                        1 => {
+                                            if phone_task.as_ref().is_none_or(|task| task.is_finished()) {
+                                                if let Some(commands) = ws_commands.as_ref() {
+                                                    let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel();
+                                                    phone_events = Some(events_tx);
+                                                    let (wake_tx,wake_rx) = tokio::sync::mpsc::unbounded_channel();
+                                                    phone_wakeups = Some((generation,wake_tx));
+                                                    phone_task = Some(spawn_scoped(gui_tx_ws.clone(), phone_history::run(s_snap.clone(), commands.clone(), events_rx, wake_rx, gui_tx_ws.clone(), ctx_ws.clone(), generation)));
+                                                }
+                                            }
+                                        }
+                                        2 => {
+                                            if let Some((current,wakeups)) = phone_wakeups.as_ref() {
+                                                if generation == *current { let _ = wakeups.send(()); }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
                                 if let Some(rx) = ws_rx.as_mut() {
                                     match tokio::time::timeout(
                                         Duration::from_millis(1500),
@@ -1047,6 +1093,11 @@ pub(super) fn spawn_session_worker(
                                                 continue;
                                             }
                                             drop(current);
+                                            if let Some(events) = phone_events.as_ref() {
+                                                if phone_task.as_ref().is_some_and(|task| !task.is_finished()) {
+                                                    let _ = events.send(ev.clone());
+                                                }
+                                            }
                                             let is_direct_history = ev.cmd == crate::socket::CMD_PULL_MSG_1_1 && ev.sub_cmd == 1;
                                             let is_group_history = ev.cmd == crate::socket::CMD_PULL_MSG_GROUP && ev.sub_cmd == 1;
                                             let is_history = is_direct_history || is_group_history;
@@ -1168,6 +1219,9 @@ pub(super) fn spawn_session_worker(
                                     tokio::time::sleep(Duration::from_secs(2)).await;
                                 }
                             } else {
+                                if let Some(task) = phone_task.take() { task.abort(); }
+                                phone_events = None;
+                                while phone_rx.try_recv().is_ok() {}
                                 ws_rx = None;
                                 ws_commands = None;
                                 ws_sek.clear();
@@ -1309,6 +1363,15 @@ pub(super) fn spawn_session_worker(
                                     cache.touch(&key).ok();cache.prune().ok();anyhow::ensure!(crate::runtime_state::registry().accepts(&scope),"Media scope expired");media_preview::open_native_viewer(&path,&mime)
                                 }.await;
                                 if result.is_err(){let _=tx.send(GuiEvent::StatusUpdate("Không mở được media; không thay URL hoặc báo tải thành công".into()));}ctx.request_repaint();});
+                        }
+                        WorkerCmd::SyncPhoneHistory { generation } => {
+                            let _ = phone_tx.send((generation, 1));
+                        }
+                        WorkerCmd::WakeupPhoneHistory { generation } => {
+                            let _ = phone_tx.send((generation, 2));
+                        }
+                        WorkerCmd::CancelPhoneHistory { generation } => {
+                            let _ = phone_tx.send((generation, 0));
                         }
                         WorkerCmd::SyncGroupHistory => {
                             let _ = group_history_tx.send(());
@@ -1692,6 +1755,7 @@ pub(super) fn spawn_session_worker(
                                             let mut sidebar_names=cached_unread.clone();
                                             let _ = gui_tx_clone.send(GuiEvent::ThreadsUpdated(cached_unread));
                                             ctx_clone.request_repaint();
+                                            if super::phone_history::enrich_cached_sidebar_senders(&s,&mut sidebar_names).await.is_err(){let _=gui_tx_clone.send(GuiEvent::StatusUpdate("Chưa phân giải được một số người gửi lịch sử cũ".into()));}
                                             crate::chat::resolve_thread_names(&s,&mut sidebar_names).await;
                                             for thread in &mut sidebar_names {thread.unread=Default::default();}
                                             let _=gui_tx_clone.send(GuiEvent::HistoryThreadsUpdated(sidebar_names));

@@ -58,6 +58,7 @@ impl MessageStore {
                 is_outgoing INTEGER,
                 raw_json TEXT
             );
+            CREATE TABLE IF NOT EXISTS thread_unread (thread_id TEXT PRIMARY KEY, state_json TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS idx_thread_ts ON messages(thread_id, ts);
             CREATE TABLE IF NOT EXISTS threads (
                 thread_id TEXT PRIMARY KEY,
@@ -81,7 +82,7 @@ impl MessageStore {
     }
 
     /// Insert a message. Returns `true` if a new row was inserted, `false` if already existed.
-    pub fn upsert_message(&mut self, msg: &StoredMessage) -> Result<bool> {
+    pub fn upsert_message(&self, msg: &StoredMessage) -> Result<bool> {
         let rows = self.conn.execute(
             "INSERT OR IGNORE INTO messages (msg_id, thread_id, sender_id, sender_name, text, msg_type, ts, is_outgoing, raw_json)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -98,32 +99,28 @@ impl MessageStore {
             ],
         )?;
         if rows == 0 && !msg.raw_json.is_empty() {
-            let _ = self.conn.execute(
+            self.conn.execute(
                 "UPDATE messages SET raw_json = ?1, msg_type = ?2, text = ?4 WHERE msg_id = ?3",
                 params![msg.raw_json, msg.msg_type, msg.msg_id, msg.text],
-            );
+            )?;
         }
         Ok(rows > 0)
     }
 
     /// Delete a message from local SQLite store when user selects "Xóa chỉ ở phía tôi".
     pub fn delete_message(&mut self, thread_id: &str, msg_id: &str, ts: i64) -> Result<()> {
-        if !msg_id.is_empty() {
-            let _ = self
-                .conn
-                .execute("DELETE FROM messages WHERE msg_id = ?1", params![msg_id]);
-        }
-        if ts > 0 && !thread_id.is_empty() {
-            let _ = self.conn.execute(
-                "DELETE FROM messages WHERE thread_id = ?1 AND ts = ?2",
-                params![thread_id, ts],
-            );
+        let _ = ts; // Timestamp is not a message identity.
+        if !thread_id.is_empty() && !msg_id.is_empty() {
+            self.conn.execute(
+                "DELETE FROM messages WHERE thread_id = ?1 AND msg_id = ?2",
+                params![thread_id, msg_id],
+            )?;
         }
         Ok(())
     }
 
     /// Insert or update thread metadata.
-    pub fn upsert_thread(&mut self, t: &StoredThread) -> Result<()> {
+    pub fn upsert_thread(&self, t: &StoredThread) -> Result<()> {
         self.conn.execute(
             "INSERT INTO threads (thread_id, name, is_group, last_ts)
              VALUES (?1, ?2, ?3, ?4)
@@ -147,13 +144,10 @@ impl MessageStore {
             // Newest `limit` rows, returned oldest-first. `ORDER BY ts ASC LIMIT` handed back the
             // *oldest* rows, so a thread longer than the limit reopened on stale messages.
             "SELECT msg_id, thread_id, sender_id, sender_name, text, msg_type, ts, is_outgoing, raw_json
-             FROM (
-                 SELECT msg_id, thread_id, sender_id, sender_name, text, msg_type, ts, is_outgoing, raw_json
-                 FROM messages
-                 WHERE thread_id = ?1
-                 ORDER BY ts DESC
-                 LIMIT ?2
-             ) ORDER BY ts ASC",
+             FROM messages
+             WHERE thread_id = ?1
+             ORDER BY ts DESC, msg_id DESC
+             LIMIT ?2",
         )?;
 
         let rows = stmt.query_map(params![thread_id, limit as i64], |row| {
@@ -175,6 +169,7 @@ impl MessageStore {
         for r in rows {
             list.push(r?);
         }
+        list.reverse();
         Ok(list)
     }
 
@@ -220,26 +215,6 @@ impl MessageStore {
                     existing.name = st.name;
                 }
                 existing.is_group = existing.is_group || st.is_group;
-            } else if !crate::chat::is_generic_thread_name(&st.name)
-                && threads
-                    .iter()
-                    .any(|t| t.is_group == st.is_group && t.name.trim() == st.name.trim())
-            {
-                // Migrate stale session-scoped `thread_id` in SQLite to the active contact's `id`
-                if let Some(live_id) = threads
-                    .iter()
-                    .find(|t| t.is_group == st.is_group && t.name.trim() == st.name.trim())
-                    .map(|t| t.id.clone())
-                {
-                    let _ = self.conn.execute(
-                        "UPDATE messages SET thread_id = ?1 WHERE thread_id = ?2",
-                        params![live_id, st.thread_id],
-                    );
-                    let _ = self.conn.execute(
-                        "DELETE FROM threads WHERE thread_id = ?1",
-                        params![st.thread_id],
-                    );
-                }
             } else {
                 threads.push(Thread {
                     presentation: Default::default(),
@@ -285,13 +260,20 @@ impl MessageStore {
                     params![t.id],
                 );
             }
+            if t.unread.last_seen_id.is_none() {
+                if let Ok(raw) = self.conn.query_row(
+                    "SELECT state_json FROM thread_unread WHERE thread_id=?1",
+                    params![t.id],
+                    |row| row.get::<_, String>(0),
+                ) {
+                    if let Ok(state) = serde_json::from_str(&raw) {
+                        t.unread = state;
+                    }
+                }
+            }
             let saved_msgs = self.messages_for(&t.id, limit_per_thread)?;
             for sm in saved_msgs {
-                let time = if sm.ts > 0 {
-                    crate::clock::message_time(sm.ts)
-                } else {
-                    crate::ui::clock()
-                };
+                let time = crate::clock::message_time(sm.ts);
                 let mut sticker_id = None;
                 let mut sticker_cate_id = None;
                 let mut sticker_type = None;
@@ -299,6 +281,11 @@ impl MessageStore {
                 let mut reply_to_sender = None;
                 let mut reply_to_text = None;
                 let mut reactions = Vec::new();
+                let mut reaction_summaries = Vec::new();
+                let mut reaction_snapshot = false;
+                let mut reaction_authoritative_snapshot = false;
+                let mut reaction_versions = Default::default();
+                let mut client_message_id = String::new();
                 let mut is_pinned = false;
                 let mut is_starred = false;
                 let mut link_url = None;
@@ -306,8 +293,35 @@ impl MessageStore {
                 let mut link_desc = None;
                 let mut link_thumb = None;
                 let mut link_src = None;
+                let mut history_source = None;
+                let mut kind = Default::default();
+                let mut wire_ref = Default::default();
+                let mut unread_policy = Default::default();
+                let mut delivery = Default::default();
+                let mut reaction_snapshot_provenance = Default::default();
                 if !sm.raw_json.is_empty() {
                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&sm.raw_json) {
+                        history_source = val.get("history_source").cloned();
+                        kind = val
+                            .get("kind")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        wire_ref = val
+                            .get("wire_ref")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        unread_policy = val
+                            .get("unread_policy")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        delivery = val
+                            .get("delivery")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        reaction_snapshot_provenance = val
+                            .get("reaction_snapshot_provenance")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
                         sticker_id = val
                             .get("stickerId")
                             .or_else(|| val.get("id"))
@@ -329,6 +343,27 @@ impl MessageStore {
                             .get("reply_to_text")
                             .and_then(|v| v.as_str())
                             .map(str::to_string);
+                        reaction_summaries = val
+                            .get("reaction_summaries")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        reaction_snapshot = val
+                            .get("reaction_snapshot")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        reaction_authoritative_snapshot = val
+                            .get("reaction_authoritative_snapshot")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        reaction_versions = val
+                            .get("reaction_versions")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        client_message_id = val
+                            .get("client_message_id")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
                         if let Some(arr) = val.get("reactions").and_then(|v| v.as_array()) {
                             reactions = arr
                                 .iter()
@@ -383,6 +418,12 @@ impl MessageStore {
                     reply_to_sender,
                     reply_to_text,
                     reactions,
+                    reaction_summaries,
+                    reaction_snapshot,
+                    reaction_authoritative_snapshot,
+                    reaction_snapshot_fresh: false,
+                    reaction_versions,
+                    client_message_id,
                     is_pinned,
                     is_starred,
                     link_url,
@@ -390,18 +431,23 @@ impl MessageStore {
                     link_desc,
                     link_thumb,
                     link_src,
-
+                    history_source,
+                    kind,
+                    wire_ref,
+                    unread_policy,
+                    delivery,
+                    reaction_snapshot_provenance,
                     ..Default::default()
                 };
-                if let Some(existing) = t.messages.iter_mut().find(|existing| {
-                    (!existing.id.is_empty() && existing.id == cm.id)
-                        || (existing.text == cm.text
-                            && existing.is_outgoing == cm.is_outgoing
-                            && (existing.ts == cm.ts
-                                || (existing.ts != 0
-                                    && cm.ts != 0
-                                    && (existing.ts - cm.ts).abs() < 5000)))
-                }) {
+                if let Some(existing) = t
+                    .messages
+                    .iter_mut()
+                    .find(|existing| !existing.id.is_empty() && existing.id == cm.id)
+                {
+                    existing.merge_reaction_metadata(&cm);
+                    if cm.history_source.is_some() {
+                        existing.history_source = cm.history_source.clone();
+                    }
                     if existing.sticker_id.is_none() && cm.sticker_id.is_some() {
                         existing.sticker_id = cm.sticker_id;
                         existing.sticker_cate_id = cm.sticker_cate_id;
@@ -452,6 +498,28 @@ impl MessageStore {
 impl From<&ChatMessage> for StoredMessage {
     fn from(m: &ChatMessage) -> Self {
         let mut meta = serde_json::Map::new();
+        if m.kind != Default::default() {
+            meta.insert("kind".into(), serde_json::json!(m.kind));
+        }
+        if m.wire_ref != Default::default() {
+            meta.insert("wire_ref".into(), serde_json::json!(m.wire_ref));
+        }
+        if m.unread_policy != Default::default() {
+            meta.insert("unread_policy".into(), serde_json::json!(m.unread_policy));
+        }
+        if m.delivery != Default::default() {
+            meta.insert("delivery".into(), serde_json::json!(m.delivery));
+        }
+        if m.reaction_snapshot_provenance != Default::default() {
+            meta.insert(
+                "reaction_snapshot_provenance".into(),
+                serde_json::json!(m.reaction_snapshot_provenance),
+            );
+        }
+
+        if let Some(source) = &m.history_source {
+            meta.insert("history_source".into(), source.clone());
+        }
         let msg_type = if let Some(sid) = m.sticker_id {
             let cid = m.sticker_cate_id.unwrap_or(0);
             let st = m.sticker_type.unwrap_or(7);
@@ -470,6 +538,34 @@ impl From<&ChatMessage> for StoredMessage {
         }
         if let Some(ref rtext) = m.reply_to_text {
             meta.insert("reply_to_text".into(), serde_json::json!(rtext));
+        }
+        if !m.reaction_summaries.is_empty() || m.reaction_snapshot {
+            meta.insert(
+                "reaction_summaries".into(),
+                serde_json::json!(m.reaction_summaries),
+            );
+            meta.insert(
+                "reaction_snapshot".into(),
+                serde_json::json!(m.reaction_snapshot),
+            );
+        }
+        if m.reaction_authoritative_snapshot {
+            meta.insert(
+                "reaction_authoritative_snapshot".into(),
+                serde_json::json!(true),
+            );
+        }
+        if !m.reaction_versions.is_empty() {
+            meta.insert(
+                "reaction_versions".into(),
+                serde_json::json!(m.reaction_versions),
+            );
+        }
+        if !m.client_message_id.is_empty() {
+            meta.insert(
+                "client_message_id".into(),
+                serde_json::json!(m.client_message_id),
+            );
         }
         if !m.reactions.is_empty() {
             meta.insert("reactions".into(), serde_json::json!(m.reactions));
@@ -524,16 +620,14 @@ impl From<&ChatMessage> for StoredMessage {
 
 /// Persist threads and their messages to SQLite store, returning the count of newly inserted messages.
 pub fn persist_threads(store: &mut MessageStore, threads: &[Thread]) -> Result<usize> {
-    // One transaction for the whole snapshot: in autocommit every row was its own fsync.
-    store.conn.execute_batch("BEGIN")?;
-    let res = persist_threads_inner(store, threads);
-    store
-        .conn
-        .execute_batch(if res.is_ok() { "COMMIT" } else { "ROLLBACK" })?;
-    res
+    // One atomic snapshot avoids a filesystem sync per message.
+    let transaction = store.conn.unchecked_transaction()?;
+    let count = persist_threads_snapshot(store, threads)?;
+    transaction.commit()?;
+    Ok(count)
 }
 
-fn persist_threads_inner(store: &mut MessageStore, threads: &[Thread]) -> Result<usize> {
+fn persist_threads_snapshot(store: &MessageStore, threads: &[Thread]) -> Result<usize> {
     let mut new_count = 0;
     for t in threads {
         let last_ts = t.messages.iter().map(|m| m.ts).max().unwrap_or(0);
@@ -544,6 +638,8 @@ fn persist_threads_inner(store: &mut MessageStore, threads: &[Thread]) -> Result
             last_ts,
         };
         store.upsert_thread(&st)?;
+        store.conn.execute("INSERT INTO thread_unread(thread_id,state_json) VALUES(?1,?2) ON CONFLICT(thread_id) DO UPDATE SET state_json=excluded.state_json",
+            params![t.id,serde_json::to_string(&t.unread)?])?;
 
         for m in t.messages.iter().filter(|m| m.text != "sendBubbleMessage") {
             let mut sm = StoredMessage::from(m);
@@ -570,48 +666,164 @@ pub fn load_history_into_threads(path: &str, threads: &mut Vec<Thread>, limit_pe
 mod tests {
     use super::*;
 
+    fn disposable_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "zl-{label}-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
     #[test]
-    fn local_time_when_hydrating_seconds_and_milliseconds() {
+    fn newest_bounded_window_is_latest_500_ascending() {
         let mut store = MessageStore::open(":memory:").unwrap();
-        store
-            .upsert_thread(&StoredThread {
-                thread_id: "thread-1".into(),
-                name: "Example".into(),
-                is_group: false,
-                last_ts: 1793467800000,
-            })
-            .unwrap();
-        for (id, ts) in [("msg-0001", 1793467800), ("msg-0002", 1793467800000)] {
-            store
-                .upsert_message(&StoredMessage {
-                    msg_id: id.into(),
-                    thread_id: "thread-1".into(),
-                    sender_id: "user-1".into(),
-                    sender_name: "Example".into(),
-                    text: "hello".into(),
-                    msg_type: "chat.text".into(),
-                    ts,
-                    is_outgoing: false,
-                    raw_json: String::new(),
-                })
-                .unwrap();
+        persist_threads(&mut store, &[snapshot_fixture(601)]).unwrap();
+        let messages = store.messages_for("snapshot-thread", 500).unwrap();
+        assert_eq!(messages.len(), 500);
+        assert_eq!(messages[0].msg_id, "snapshot-101");
+        assert_eq!(messages[499].msg_id, "snapshot-600");
+        assert!(messages.windows(2).all(|pair| pair[0].ts < pair[1].ts));
+    }
+
+    #[test]
+    fn identical_group_names_and_distinct_message_ids_survive_reopen() {
+        let path = disposable_path("group-identity");
+        let mut store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        let mut a = snapshot_fixture(2);
+        a.id = "group-a".into();
+        a.is_group = true;
+        a.name = "Same group".into();
+        for m in &mut a.messages {
+            m.text = "Identical".into();
+            m.ts = 1000;
         }
+        let mut b = a.clone();
+        b.id = "group-b".into();
+        for m in &mut b.messages {
+            m.id = format!("other-{}", m.id);
+        }
+        persist_threads(&mut store, &[a, b]).unwrap();
+        drop(store);
+        let store = MessageStore::open(path.to_str().unwrap()).unwrap();
         let mut threads = Vec::new();
-        assert_eq!(store.hydrate_threads(&mut threads, 10).unwrap(), 2);
-        let expected = crate::clock::message_time(1793467800000);
-        assert_eq!(threads[0].time, expected);
-        for message in &threads[0].messages {
-            assert_eq!(message.time, expected);
+        store.hydrate_threads(&mut threads, 500).unwrap();
+        assert_eq!(threads.len(), 2);
+        for t in &threads {
+            assert!(t.is_group);
+            assert_eq!(t.name, "Same group");
+            assert_eq!(t.messages.len(), 2);
+            assert_ne!(t.messages[0].id, t.messages[1].id);
         }
-        assert_eq!(
-            store.messages_for("thread-1", 10).unwrap()[0].ts,
-            1793467800
-        );
+        drop(store);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn authoritative_reaction_baseline_and_empty_tombstone_survive_reopen() {
+        let path = disposable_path("reaction-authoritative");
+        let mut store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        let mut thread = snapshot_fixture(1);
+        thread.messages[0].reaction_authoritative_snapshot = true;
+        thread.messages[0].reaction_snapshot = true;
+        thread.messages[0].reaction_summaries =
+            crate::reactions::parse_reactions(&serde_json::json!({"reactions":{"a":{"5":2}}}));
+        let old = crate::reactions::ReactionEvent {
+            sender_id: "a".into(),
+            event_id: "1".into(),
+            historical: true,
+            r_type: 5,
+            emoji: "❤️".into(),
+            ts: 1000,
+            ..Default::default()
+        };
+        thread.messages[0].apply_reaction(&old);
+        persist_threads(&mut store, &[thread]).unwrap();
+        drop(store);
+        let mut store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        let mut threads = Vec::new();
+        store.hydrate_threads(&mut threads, 500).unwrap();
+        let m = &mut threads[0].messages[0];
+        assert!(m.reaction_authoritative_snapshot);
+        assert_eq!(m.reaction_summaries[0].count, 2);
+        assert!(!m.apply_reaction(&old));
+        m.merge_reaction_metadata(&ChatMessage {
+            reaction_snapshot: true,
+            reaction_authoritative_snapshot: true,
+            reaction_snapshot_fresh: true,
+            ..Default::default()
+        });
+        persist_threads(&mut store, &threads).unwrap();
+        drop(store);
+        let store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        let mut threads = Vec::new();
+        store.hydrate_threads(&mut threads, 500).unwrap();
+        let m = &mut threads[0].messages[0];
+        assert!(m.reaction_authoritative_snapshot);
+        m.apply_reaction(&crate::reactions::ReactionEvent {
+            event_id: "2".into(),
+            ts: 2000,
+            ..old
+        });
+        assert!(m.reaction_summaries.is_empty());
+        assert!(m.reactions.is_empty());
+        drop(store);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn reaction_ledger_replay_after_database_reopen_is_idempotent() {
+        let path = disposable_path("reaction-ledger");
+        let mut store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        let mut thread = snapshot_fixture(1);
+        let newest = crate::reactions::ReactionEvent {
+            sender_id: "a".into(),
+            event_id: "2".into(),
+            r_type: 5,
+            emoji: "❤️".into(),
+            ts: 2000,
+            ..Default::default()
+        };
+        let older = crate::reactions::ReactionEvent {
+            event_id: "1".into(),
+            ts: 1000,
+            ..newest.clone()
+        };
+        thread.messages[0].apply_reaction(&newest);
+        thread.messages[0].apply_reaction(&older);
+        persist_threads(&mut store, &[thread]).unwrap();
+        drop(store);
+        let mut store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        let mut threads = Vec::new();
+        store.hydrate_threads(&mut threads, 500).unwrap();
+        let m = &mut threads[0].messages[0];
+        assert_eq!(m.reaction_summaries[0].count, 2);
+        assert!(!m.apply_reaction(&newest));
+        assert!(!m.apply_reaction(&older));
+        assert_eq!(m.reaction_summaries[0].reactor_counts["a"], 2);
+        assert!(m.apply_reaction(&crate::reactions::ReactionEvent {
+            event_id: "3".into(),
+            ts: 1500,
+            r_type: -1,
+            ..older.clone()
+        }));
+        assert_eq!(m.reaction_summaries[0].count, 1);
+        persist_threads(&mut store, &threads).unwrap();
+        drop(store);
+        let store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        let mut threads = Vec::new();
+        store.hydrate_threads(&mut threads, 500).unwrap();
+        assert!(!threads[0].messages[0].apply_reaction(&older));
+        assert_eq!(threads[0].messages[0].reaction_summaries[0].count, 1);
+        drop(store);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn test_insert_twice_returns_false() {
-        let mut store = MessageStore::open(":memory:").unwrap();
+        let store = MessageStore::open(":memory:").unwrap();
         let msg = StoredMessage {
             msg_id: "m_1001".into(),
             thread_id: "thread_1".into(),
@@ -630,7 +842,7 @@ mod tests {
 
     #[test]
     fn test_messages_for_returns_ordered_rows() {
-        let mut store = MessageStore::open(":memory:").unwrap();
+        let store = MessageStore::open(":memory:").unwrap();
         let thread_id = "thread_order_test";
 
         let m1 = StoredMessage {
@@ -688,6 +900,84 @@ mod tests {
         );
     }
 
+    fn snapshot_fixture(count: usize) -> Thread {
+        Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
+            id: "snapshot-thread".into(),
+            name: "Fixture".into(),
+            messages: (0..count)
+                .map(|i| ChatMessage {
+                    id: format!("snapshot-{i}"),
+                    text: format!("Fixture {i}"),
+                    ts: i as i64 + 1,
+                    ..Default::default()
+                })
+                .collect(),
+            preview: String::new(),
+            time: String::new(),
+            avatar: None,
+            is_group: false,
+        }
+    }
+
+    #[test]
+    fn snapshot_rolls_back_on_insert_and_update_failure() {
+        let mut store = MessageStore::open(":memory:").unwrap();
+        store.conn.execute_batch("CREATE TRIGGER reject_insert BEFORE INSERT ON messages WHEN NEW.msg_id = 'snapshot-1' BEGIN SELECT RAISE(ABORT, 'fixture failure'); END;").unwrap();
+        assert!(persist_threads(&mut store, &[snapshot_fixture(2)]).is_err());
+        assert!(store.all_threads().unwrap().is_empty());
+        assert!(store
+            .messages_for("snapshot-thread", 10)
+            .unwrap()
+            .is_empty());
+        store
+            .conn
+            .execute_batch("DROP TRIGGER reject_insert;")
+            .unwrap();
+        assert_eq!(
+            persist_threads(&mut store, &[snapshot_fixture(2)]).unwrap(),
+            2
+        );
+        store.conn.execute_batch("CREATE TRIGGER reject_update BEFORE UPDATE ON messages BEGIN SELECT RAISE(ABORT, 'fixture update failure'); END;").unwrap();
+        let mut changed = snapshot_fixture(2);
+        changed.name = "Changed".into();
+        changed.messages[0].text = "Changed".into();
+        changed.messages[0].history_source = Some(serde_json::json!({"fixture":true}));
+        assert!(persist_threads(&mut store, &[changed]).is_err());
+        assert_eq!(store.all_threads().unwrap()[0].name, "Fixture");
+        assert_eq!(
+            store.messages_for("snapshot-thread", 10).unwrap()[0].text,
+            "Fixture 0"
+        );
+        assert!(store.conn.is_autocommit());
+    }
+
+    #[test]
+    fn bulk_snapshot_survives_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "zl-bulk-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        assert_eq!(
+            persist_threads(&mut store, &[snapshot_fixture(5000)]).unwrap(),
+            5000
+        );
+        drop(store);
+        let store = MessageStore::open(path.to_str().unwrap()).unwrap();
+        let messages = store.messages_for("snapshot-thread", 6000).unwrap();
+        assert_eq!(messages.len(), 5000);
+        assert_eq!(messages[0].msg_id, "snapshot-0");
+        assert_eq!(messages[4999].msg_id, "snapshot-4999");
+        drop(store);
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn test_persist_threads_and_upsert_thread() {
         let mut store = MessageStore::open(":memory:").unwrap();
@@ -722,7 +1012,7 @@ mod tests {
             ],
         };
 
-        let count1 = persist_threads(&mut store, &[thread.clone()]).unwrap();
+        let count1 = persist_threads(&mut store, std::slice::from_ref(&thread)).unwrap();
         assert_eq!(count1, 2);
 
         // Second persist returns 0 newly inserted

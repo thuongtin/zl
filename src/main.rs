@@ -320,7 +320,8 @@ async fn main() -> Result<()> {
 
 mod message_navigation;
 
-mod media_resources;
-pub mod read_receipts;
 pub mod delivery_receipts;
+mod media_resources;
 pub mod presence;
+pub mod read_receipts;
+pub mod store_v2;

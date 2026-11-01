@@ -22,6 +22,9 @@ use crate::qr::QrLogin;
 use crate::session::Session;
 
 mod emoji_text;
+mod history;
+mod group_history;
+mod media_preview;
 mod messages;
 mod modals;
 mod persistence;

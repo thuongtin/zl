@@ -387,6 +387,77 @@ pub(super) fn pick_native_file_dialog(images_only: bool) -> Option<std::path::Pa
 
 /// Detect `Ctrl+V` or `Shift+Insert` reliably on Windows even when `egui-winit` swallows `Key::V`
 /// because the system clipboard contains an image instead of UTF-8 text.
+pub(super) fn pick_native_files_dialog(images_only: bool) -> Vec<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let selection = if images_only {
+            "choose file with prompt \"Chọn hình ảnh để gửi qua Zalo\" of type {\"public.image\"} with multiple selections allowed"
+        } else {
+            "choose file with prompt \"Chọn tập tin đính kèm để gửi qua Zalo\" with multiple selections allowed"
+        };
+        // Foundation JSON serialization preserves commas, Unicode, and embedded newlines in paths.
+        let script = format!(
+            r#"use framework "Foundation"
+use scripting additions
+set chosenFiles to {selection}
+set filePaths to {{}}
+repeat with selectedFile in chosenFiles
+    set end of filePaths to POSIX path of selectedFile
+end repeat
+set jsonData to current application's NSJSONSerialization's dataWithJSONObject:filePaths options:0 |error|:(missing value)
+set jsonText to current application's NSString's alloc()'s initWithData:jsonData encoding:(current application's NSUTF8StringEncoding)
+return jsonText as text"#
+        );
+        if let Ok(output) = std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+        {
+            if output.status.success() {
+                return decode_picker_paths(&output.stdout);
+            }
+        }
+        Vec::new()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        pick_native_file_dialog(images_only).into_iter().collect()
+    }
+}
+
+fn decode_picker_paths(bytes: &[u8]) -> Vec<std::path::PathBuf> {
+    if bytes.len() > 256 * 1024 {
+        return Vec::new();
+    }
+    serde_json::from_slice::<Vec<String>>(bytes)
+        .unwrap_or_default()
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .collect()
+}
+
+#[cfg(test)]
+mod native_picker_tests {
+    use super::decode_picker_paths;
+    #[test]
+    fn json_paths_preserve_commas_unicode_and_newlines() {
+        let paths = vec!["/tmp/hello,world.png", "/tmp/ảnh bé.png", "/tmp/a\nb.png"];
+        let encoded = serde_json::to_vec(&paths).unwrap();
+        let decoded = decode_picker_paths(&encoded);
+        assert_eq!(
+            decoded,
+            paths
+                .iter()
+                .map(std::path::PathBuf::from)
+                .collect::<Vec<_>>()
+        );
+        assert!(decode_picker_paths(b"not-json").is_empty());
+        assert!(decode_picker_paths(br#"["relative.png"]"#).is_empty());
+    }
+}
+
+/// Detect `Ctrl+V` or `Shift+Insert` reliably on Windows even when `egui-winit` swallows `Key::V`
+/// because the system clipboard contains an image instead of UTF-8 text.
 pub(super) fn is_clipboard_paste_triggered(ctx: &egui::Context) -> bool {
     let egui_paste = ctx.input(|i| {
         (i.modifiers.ctrl && i.key_pressed(Key::V))

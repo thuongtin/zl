@@ -435,7 +435,7 @@ impl WireLog {
             .entry(format!("{dir}{}", h.pt))
             .or_default();
         *n += 1;
-        if *n <= DETAIL_FIRST || *n % DETAIL_EVERY == 0 {
+        if *n <= DETAIL_FIRST || (*n).is_multiple_of(DETAIL_EVERY) {
             line(
                 if dir == "<" { "RTP<" } else { "RTP>" },
                 format!(
@@ -489,7 +489,7 @@ impl WireLog {
     pub fn unknown(&mut self, via: Via, wire_len: usize, peer: &str, wire: &[u8]) {
         self.max_wire_rx = self.max_wire_rx.max(wire_len);
         self.unk_lines += 1;
-        if self.unk_lines <= 40 || self.unk_lines % 100 == 0 {
+        if self.unk_lines <= 40 || self.unk_lines.is_multiple_of(100) {
             line(
                 "UNK<",
                 format!(

@@ -435,7 +435,7 @@ async fn call(s: &Session, uid: &str, video: bool, zrtp: bool, secs: f64) -> Res
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(1_700_000_000_000);
-    let call_id = ((now_ms % 1_800_000_000) + 100_000_000) as i64;
+    let call_id = (now_ms % 1_800_000_000) + 100_000_000;
 
     // Keep the control cursor warm before dialing so we do not miss the answer event.
     let mut st = CtrlPollState::default();

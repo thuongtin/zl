@@ -26,10 +26,10 @@ pub mod updater;
 
 pub mod delivery_receipts;
 pub mod message_navigation;
-pub mod presence;
-pub mod read_receipts;
-pub mod store_v2;
-pub mod reaction_journal;
-pub mod original_reactions;
-pub mod runtime_state;
 pub mod native_notifications;
+pub mod original_reactions;
+pub mod presence;
+pub mod reaction_journal;
+pub mod read_receipts;
+pub mod runtime_state;
+pub mod store_v2;

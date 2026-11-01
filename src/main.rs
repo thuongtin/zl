@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
 
     // Attempt to restore persistent session from disk
     let session_restored = if !force_logout {
-        if let Ok(_) = s.load_from_file("session.json") {
+        if s.load_from_file("session.json").is_ok() {
             if let Some(li) = &s.login {
                 let name = if li.display_name.is_empty() {
                     "Zalo User"
@@ -322,10 +322,10 @@ mod message_navigation;
 
 pub mod delivery_receipts;
 mod media_resources;
-pub mod presence;
-pub mod read_receipts;
-pub mod store_v2;
-pub mod reaction_journal;
-pub mod original_reactions;
-pub mod runtime_state;
 pub mod native_notifications;
+pub mod original_reactions;
+pub mod presence;
+pub mod reaction_journal;
+pub mod read_receipts;
+pub mod runtime_state;
+pub mod store_v2;

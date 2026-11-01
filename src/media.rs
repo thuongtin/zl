@@ -1084,17 +1084,13 @@ fn find_aud_delimiter(buf: &[u8], start_from: usize) -> Option<usize> {
     if buf.len() < start_from + 6 {
         return None;
     }
-    for i in start_from..=buf.len() - 6 {
-        if buf[i] == 0
+    (start_from..=buf.len() - 6).find(|&i| {
+        buf[i] == 0
             && buf[i + 1] == 0
             && buf[i + 2] == 0
             && buf[i + 3] == 1
             && (buf[i + 4] & 0x1F) == 9
-        {
-            return Some(i);
-        }
-    }
-    None
+    })
 }
 
 fn strip_leading_aud(au: &[u8]) -> Vec<u8> {
@@ -1585,7 +1581,7 @@ fn run_media_loop(
             last_video_tx = std::time::Instant::now();
             let force_kf = vid_frame_no == 0
                 || vid_gop_pos >= H264_PSLICES.len()
-                || vid_frame_no % VIDEO_IDR_INTERVAL_FRAMES == 0
+                || vid_frame_no.is_multiple_of(VIDEO_IDR_INTERVAL_FRAMES)
                 || want_keyframe.swap(false, Ordering::Relaxed);
 
             // Drain latest live webcam access unit if available
@@ -1821,7 +1817,7 @@ fn run_media_loop(
                 static LOGGED_RX: std::sync::atomic::AtomicUsize =
                     std::sync::atomic::AtomicUsize::new(0);
                 let cnt = LOGGED_RX.fetch_add(1, Ordering::Relaxed);
-                if cnt < 16 || cnt % 100 == 0 {
+                if cnt < 16 || cnt.is_multiple_of(100) {
                     crate::call::trace_line(
                         "RTP<",
                         format!("from={peer_s} len={n} outer=0x{:02x} pt={pt}", raw_pkt[0]),
@@ -2158,7 +2154,7 @@ fn run_h264_ffmpeg_decoder(
                             );
                         } else {
                             dropped += 1;
-                            if dropped == 1 || dropped % 100 == 0 {
+                            if dropped == 1 || dropped.is_multiple_of(100) {
                                 crate::voip_log::line(
                                     "VDEC",
                                     format!(
@@ -2180,7 +2176,7 @@ fn run_h264_ffmpeg_decoder(
                     }
                     let _ = stdin.flush();
                     fed += 1;
-                    if fed == 1 || fed % 100 == 0 {
+                    if fed == 1 || fed.is_multiple_of(100) {
                         crate::voip_log::line("VDEC", format!("fed {fed} access units to ffmpeg"));
                     }
                 }
@@ -2195,7 +2191,7 @@ fn run_h264_ffmpeg_decoder(
     while !stop.load(Ordering::Relaxed) {
         if stdout.read_exact(&mut raw_frame).is_ok() {
             decoded += 1;
-            if decoded == 1 || decoded % 100 == 0 {
+            if decoded == 1 || decoded.is_multiple_of(100) {
                 crate::voip_log::line("VDEC", format!("decoded frame #{decoded}"));
             }
             let (cw, ch, cropped) = trim_black_borders(&raw_frame, VID_W, VID_H);

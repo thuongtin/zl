@@ -317,3 +317,7 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+mod message_navigation;
+
+mod media_resources;

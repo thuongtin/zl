@@ -23,3 +23,5 @@ pub mod voip_log;
 pub mod data_dir;
 pub mod media_resources;
 pub mod updater;
+
+pub mod message_navigation;

@@ -1646,6 +1646,79 @@ impl ZaloGuiApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(pal.bg_chat_canvas))
             .show(ctx, |ui| {
+                for error in self.persistence_errors.values() {
+                    egui::Frame::none().inner_margin(Margin::same(10.0)).show(ui, |ui| {
+                        ui.label(RichText::new(error).color(Color32::from_rgb(210, 70, 50)));
+                    });
+                }
+                let show_direct_history = thread_meta.as_ref().map(|(_, name, _, is_group, _)| {
+                    !is_group && !name.contains("Cloud của tôi")
+                }).unwrap_or(true);
+                if thread_meta.as_ref().is_some_and(|(_, _, _, is_group, _)| *is_group) {
+                    egui::Frame::none().inner_margin(Margin::same(10.0)).show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new(&self.group_history_status).size(12.0).color(pal.text_secondary));
+                            if ui.add_enabled(!self.phone_history_active, egui::Button::new("Đồng bộ 1-1 và nhóm từ điện thoại")).clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    self.phone_history_generation = self.phone_history_generation.wrapping_add(1);
+                                    self.phone_history_active = true;
+                                    self.phone_history_status = "Đang chuẩn bị đồng bộ 1-1 và nhóm từ điện thoại".into();
+                                    let _ = tx.send(WorkerCmd::SyncPhoneHistory { generation: self.phone_history_generation });
+                                }
+                            }
+                            if self.phone_history_active && ui.button("Gửi thông báo tới điện thoại").clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    let _ = tx.send(WorkerCmd::WakeupPhoneHistory { generation: self.phone_history_generation });
+                                }
+                            }
+                            if self.phone_history_active && ui.button("Dừng đồng bộ").clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    let _ = tx.send(WorkerCmd::CancelPhoneHistory { generation: self.phone_history_generation });
+                                }
+                            }
+                            ui.label(RichText::new(&self.phone_history_status).size(12.0).color(pal.text_secondary));
+                            if ui.button("Tải thêm lịch sử nhóm").clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    let _ = tx.send(WorkerCmd::SyncGroupHistory);
+                                    if let Some((group_id, _, _, _, _)) = thread_meta.as_ref() {
+                                        let _ = tx.send(WorkerCmd::LoadGroupHistory { group_id: group_id.clone(), is_group: true });
+                                    }
+                                }
+                            }
+                        });
+                    });
+                }
+                if show_direct_history {
+                    egui::Frame::none().inner_margin(Margin::same(10.0)).show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new(&self.direct_history_status).size(12.0).color(pal.text_secondary));
+                            if ui.add_enabled(!self.phone_history_active, egui::Button::new("Đồng bộ 1-1 và nhóm từ điện thoại")).clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    self.phone_history_generation = self.phone_history_generation.wrapping_add(1);
+                                    self.phone_history_active = true;
+                                    self.phone_history_status = "Đang chuẩn bị đồng bộ từ điện thoại".into();
+                                    let _ = tx.send(WorkerCmd::SyncPhoneHistory { generation: self.phone_history_generation });
+                                }
+                            }
+                            if self.phone_history_active && ui.button("Gửi thông báo tới điện thoại").clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    let _ = tx.send(WorkerCmd::WakeupPhoneHistory { generation: self.phone_history_generation });
+                                }
+                            }
+                            if self.phone_history_active && ui.button("Dừng đồng bộ").clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    let _ = tx.send(WorkerCmd::CancelPhoneHistory { generation: self.phone_history_generation });
+                                }
+                            }
+                            ui.label(RichText::new(&self.phone_history_status).size(12.0).color(pal.text_secondary));
+                            if ui.button("Tải thêm lịch sử 1-1").clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    let _ = tx.send(WorkerCmd::SyncDirectHistory);
+                                }
+                            }
+                        });
+                    });
+                }
                 if let Some((thread_id, thread_name, thread_avatar, is_group, _msg_count)) =
                     thread_meta
                 {

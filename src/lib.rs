@@ -24,7 +24,8 @@ pub mod data_dir;
 pub mod media_resources;
 pub mod updater;
 
-pub mod message_navigation;
-pub mod read_receipts;
 pub mod delivery_receipts;
+pub mod message_navigation;
 pub mod presence;
+pub mod read_receipts;
+pub mod store_v2;

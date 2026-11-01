@@ -19,9 +19,22 @@ async fn main() -> Result<()> {
     let li = s.login.as_ref().unwrap();
     println!("✓ Đã tải session.json:");
     println!("  UIN:          {}", li.uin);
-    println!("  Tên:          {}", if li.display_name.is_empty() { "(chưa có)" } else { &li.display_name });
-    println!("  zpw_enk:      {}", zalo_rust::session::redact_secret(&li.zpw_enk));
-    println!("  zpw_sek:      {}", zalo_rust::session::redact_secret(&li.zpw_sek));
+    println!(
+        "  Tên:          {}",
+        if li.display_name.is_empty() {
+            "(chưa có)"
+        } else {
+            &li.display_name
+        }
+    );
+    println!(
+        "  zpw_enk:      {}",
+        zalo_rust::session::redact_secret(&li.zpw_enk)
+    );
+    println!(
+        "  zpw_sek:      {}",
+        zalo_rust::session::redact_secret(&li.zpw_sek)
+    );
     println!("  Send2Me ID:   {}", li.send2me_id);
     println!("  Profile Host: {}", s.domains.profile);
     println!("  Convers Host: {}", s.domains.convers_api);
@@ -33,12 +46,17 @@ async fn main() -> Result<()> {
         Ok(f) => {
             println!("✓ getfriends THÀNH CÔNG! Số lượng: {}", f.len());
             for (i, item) in f.iter().enumerate() {
-                println!("  [{i}] ID: {:<20} Tên: {:<25} Tin nhắn: {}", item.id, item.name, item.preview);
+                println!(
+                    "  [{i}] ID: {:<20} Tên: {:<25} Tin nhắn: {}",
+                    item.id, item.name, item.preview
+                );
             }
             f
         }
         Err(e) => {
-            println!("! getfriends lỗi ({e}) -> Khởi tạo danh sách mặc định từ session để test tiếp...");
+            println!(
+                "! getfriends lỗi ({e}) -> Khởi tạo danh sách mặc định từ session để test tiếp..."
+            );
             let mut list = Vec::new();
             if !li.send2me_id.is_empty() {
                 list.push(zalo_rust::chat::Thread {
@@ -72,9 +90,20 @@ async fn main() -> Result<()> {
     }
     println!("\n=== KẾT QUẢ ĐỒNG BỘ TIN NHẮN VÀO HỘI THOẠI ===");
     for (i, f) in friends.iter().enumerate() {
-        println!("  [{i}] ID: {:<20} Tên: {:<25} Tin mới nhất: '{}' (Tổng tin: {})", f.id, f.name, f.preview, f.messages.len());
+        println!(
+            "  [{i}] ID: {:<20} Tên: {:<25} Tin mới nhất: '{}' (Tổng tin: {})",
+            f.id,
+            f.name,
+            f.preview,
+            f.messages.len()
+        );
         for (mi, m) in f.messages.iter().enumerate() {
-            println!("      ({mi}) [{}] {}: {}", m.time, if m.is_outgoing { "Tôi" } else { &m.sender }, m.text);
+            println!(
+                "      ({mi}) [{}] {}: {}",
+                m.time,
+                if m.is_outgoing { "Tôi" } else { &m.sender },
+                m.text
+            );
         }
     }
 
@@ -88,7 +117,10 @@ async fn main() -> Result<()> {
             }
             // 4. Test get_group_history on first group if available
             if let Some(first_g) = groups.first() {
-                println!("\n--- [4] Thử gọi /api/group/history cho nhóm {} ---", first_g.id);
+                println!(
+                    "\n--- [4] Thử gọi /api/group/history cho nhóm {} ---",
+                    first_g.id
+                );
                 match zalo_rust::chat::get_group_history(&s, &first_g.id, 10).await {
                     Ok(resp) => {
                         println!("✓ get_group_history THÀNH CÔNG!");
@@ -112,7 +144,10 @@ async fn main() -> Result<()> {
     println!("\n--- [5] Kiểm tra lưu và đọc threads_cache.json ---");
     zalo_rust::chat::save_threads_cache(&friends);
     let reloaded = zalo_rust::chat::load_threads_cache();
-    println!("✓ threads_cache.json: Đã lưu và nạp lại thành công {} hội thoại.", reloaded.len());
+    println!(
+        "✓ threads_cache.json: Đã lưu và nạp lại thành công {} hội thoại.",
+        reloaded.len()
+    );
 
     // 6. Optional send test (1-1 or group)
     let args: Vec<String> = std::env::args().skip(1).collect();

@@ -80,7 +80,10 @@ pub fn draw(threads: &[Thread], selected: usize, status: &str) -> Result<Action>
     }
 
     writeln!(out, "{}", "─".repeat(64))?;
-    writeln!(out, "\x1b[90m↑/↓ chọn (mỗi dòng một phím) · r làm mới · q thoát\x1b[0m")?;
+    writeln!(
+        out,
+        "\x1b[90m↑/↓ chọn (mỗi dòng một phím) · r làm mới · q thoát\x1b[0m"
+    )?;
     out.flush()?;
 
     // Line-buffered read: no terminal mode juggling, so it can never hang the console.

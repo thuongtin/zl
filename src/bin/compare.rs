@@ -79,7 +79,10 @@ fn aes_decrypt_hex(key: &[u8], hex: &str) -> Option<String> {
 fn main() -> anyhow::Result<()> {
     let text = std::fs::read_to_string("captured.txt")
         .map_err(|_| anyhow::anyhow!("thiếu captured.txt — xem re-notes/capture.md"))?;
-    let line = text.lines().find(|l| l.contains("loginByPasswv2")).unwrap_or(text.trim());
+    let line = text
+        .lines()
+        .find(|l| l.contains("loginByPasswv2"))
+        .unwrap_or(text.trim());
     let query = line.split_once('?').map(|(_, q)| q).unwrap_or(line);
 
     let mut f: BTreeMap<String, String> = BTreeMap::new();
@@ -104,10 +107,45 @@ fn main() -> anyhow::Result<()> {
     //    real client signs the same field set we do.
     let tags = ["loginbypasswv2"];
     let sets: [(&str, Vec<&str>); 4] = [
-        ("all minus enk/ref", vec!["client_version", "enc_ver", "params", "type", "zcid", "zcid_ext"]),
-        ("all minus ref", vec!["client_version", "enc_ver", "enk", "params", "type", "zcid", "zcid_ext"]),
-        ("minus params", vec!["client_version", "enc_ver", "type", "zcid", "zcid_ext"]),
-        ("incl ref", vec!["client_version", "enc_ver", "params", "ref", "type", "zcid", "zcid_ext"]),
+        (
+            "all minus enk/ref",
+            vec![
+                "client_version",
+                "enc_ver",
+                "params",
+                "type",
+                "zcid",
+                "zcid_ext",
+            ],
+        ),
+        (
+            "all minus ref",
+            vec![
+                "client_version",
+                "enc_ver",
+                "enk",
+                "params",
+                "type",
+                "zcid",
+                "zcid_ext",
+            ],
+        ),
+        (
+            "minus params",
+            vec!["client_version", "enc_ver", "type", "zcid", "zcid_ext"],
+        ),
+        (
+            "incl ref",
+            vec![
+                "client_version",
+                "enc_ver",
+                "params",
+                "ref",
+                "type",
+                "zcid",
+                "zcid_ext",
+            ],
+        ),
     ];
 
     println!("\n=== signkey check (against the captured value) ===");
@@ -147,7 +185,10 @@ fn main() -> anyhow::Result<()> {
             }
         }
     } else {
-        println!("decrypt failed with enk={}", zalo_rust::session::redact_secret(&enk));
+        println!(
+            "decrypt failed with enk={}",
+            zalo_rust::session::redact_secret(&enk)
+        );
     }
 
     // 3. Show what zcid encodes.

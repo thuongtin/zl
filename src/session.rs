@@ -363,14 +363,8 @@ impl Session {
     pub fn new(verbose: bool, dump: bool, dump_raw: bool) -> Result<Self> {
         let jar = Arc::new(Jar::default());
         let mut default_headers = HeaderMap::new();
-        default_headers.insert(
-            REFERER,
-            HeaderValue::from_static("https://chat.zalo.me/"),
-        );
-        default_headers.insert(
-            ORIGIN,
-            HeaderValue::from_static("https://chat.zalo.me"),
-        );
+        default_headers.insert(REFERER, HeaderValue::from_static("https://chat.zalo.me/"));
+        default_headers.insert(ORIGIN, HeaderValue::from_static("https://chat.zalo.me"));
         let http = Client::builder()
             .cookie_provider(Arc::clone(&jar))
             .default_headers(default_headers)
@@ -554,14 +548,8 @@ impl Session {
         self.session_key = None;
         self.jar = Arc::new(Jar::default());
         let mut default_headers = HeaderMap::new();
-        default_headers.insert(
-            REFERER,
-            HeaderValue::from_static("https://chat.zalo.me/"),
-        );
-        default_headers.insert(
-            ORIGIN,
-            HeaderValue::from_static("https://chat.zalo.me"),
-        );
+        default_headers.insert(REFERER, HeaderValue::from_static("https://chat.zalo.me/"));
+        default_headers.insert(ORIGIN, HeaderValue::from_static("https://chat.zalo.me"));
         if let Ok(c) = Client::builder()
             .cookie_provider(Arc::clone(&self.jar))
             .default_headers(default_headers)
@@ -583,7 +571,10 @@ impl Session {
         let saved = SavedSession {
             imei: self.imei.clone(),
             computer_name: self.computer_name.clone(),
-            secret_key_b64: self.secret_key.as_ref().map(|k| base64::engine::general_purpose::STANDARD.encode(k)),
+            secret_key_b64: self
+                .secret_key
+                .as_ref()
+                .map(|k| base64::engine::general_purpose::STANDARD.encode(k)),
             session_key: self.session_key.clone(),
             zpw_sek: self.zpw_sek.clone(),
             login: self.login.clone(),
@@ -679,8 +670,8 @@ impl Session {
 
         // Parse to a real JSON object so the dump nests properly instead of holding a
         // double-encoded string.
-        let body_json = serde_json::from_str::<Value>(body)
-            .unwrap_or_else(|_| Value::String(body.to_string()));
+        let body_json =
+            serde_json::from_str::<Value>(body).unwrap_or_else(|_| Value::String(body.to_string()));
 
         let doc = serde_json::json!({
             "method": method,
@@ -839,7 +830,15 @@ impl Session {
     async fn send(&self, m: Method, url: &str, body: Option<String>) -> Result<Value> {
         let start = std::time::Instant::now();
         if self.verbose {
-            eprintln!("→ {} {}", m, if self.dump_raw { url.to_string() } else { redact_url(url) });
+            eprintln!(
+                "→ {} {}",
+                m,
+                if self.dump_raw {
+                    url.to_string()
+                } else {
+                    redact_url(url)
+                }
+            );
             if let Some(b) = &body {
                 eprintln!("  body: {}", truncate(b, 400));
             }
@@ -933,7 +932,10 @@ impl Session {
         });
         let code = v.get("error_code").and_then(|c| c.as_i64()).unwrap_or(0);
         if code != 0 {
-            let msg = v.get("error_message").and_then(|m| m.as_str()).unwrap_or("");
+            let msg = v
+                .get("error_message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
             crate::logger::log_request(
                 &method,
                 url,
@@ -975,7 +977,10 @@ impl Session {
                 }
                 Err(e) => {
                     if self.verbose {
-                        eprintln!("  data decrypted but not JSON: {e} / {}", truncate(&pt, 200));
+                        eprintln!(
+                            "  data decrypted but not JSON: {e} / {}",
+                            truncate(&pt, 200)
+                        );
                     }
                     v
                 }
@@ -1027,7 +1032,8 @@ pub fn redact_secret(s: &str) -> String {
     format!("{prefix}…<redacted>")
 }
 
-pub fn urlencode(s: &str) -> String {    let mut out = String::with_capacity(s.len() * 3);
+pub fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {

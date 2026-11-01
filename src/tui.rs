@@ -40,7 +40,14 @@ use crate::session::Session;
 const POLL_SECS: u64 = 4;
 
 /// Quick-reaction palette for keys `1`..`6`, same order as the GUI picker.
-const QUICK_REACTIONS: [&str; 6] = ["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F606}", "\u{1F62E}", "\u{1F622}", "\u{1F620}"];
+const QUICK_REACTIONS: [&str; 6] = [
+    "\u{1F44D}",
+    "\u{2764}\u{FE0F}",
+    "\u{1F606}",
+    "\u{1F62E}",
+    "\u{1F622}",
+    "\u{1F620}",
+];
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Focus {
@@ -286,7 +293,11 @@ impl<'a> TuiApp<'a> {
 
         let pos = preferred
             .as_ref()
-            .and_then(|id| self.filtered.iter().position(|&i| self.threads[i].id == *id))
+            .and_then(|id| {
+                self.filtered
+                    .iter()
+                    .position(|&i| self.threads[i].id == *id)
+            })
             .unwrap_or(0)
             .min(self.filtered.len() - 1);
         let idx = self.filtered[pos];
@@ -405,7 +416,11 @@ impl<'a> TuiApp<'a> {
     }
 
     fn move_message(&mut self, delta: isize) {
-        let Some(len) = self.threads.get(self.selected_thread).map(|t| t.messages.len()) else {
+        let Some(len) = self
+            .threads
+            .get(self.selected_thread)
+            .map(|t| t.messages.len())
+        else {
             return;
         };
         if len == 0 {
@@ -846,7 +861,11 @@ impl<'a> TuiApp<'a> {
     }
 
     fn react_quick(&mut self, key: char) {
-        let Some(idx) = key.to_digit(10).map(|d| d as usize).and_then(|d| d.checked_sub(1)) else {
+        let Some(idx) = key
+            .to_digit(10)
+            .map(|d| d as usize)
+            .and_then(|d| d.checked_sub(1))
+        else {
             return;
         };
         let Some(emoji) = QUICK_REACTIONS.get(idx).copied() else {
@@ -994,7 +1013,8 @@ impl<'a> TuiApp<'a> {
                         }
                         Err(e) => {
                             logger::log_error("tui::delete_message_for_me", &e.to_string());
-                            let _ = tx.send(BgEvent::ActionFailed(format!("Lỗi xoá tin nhắn: {e}")));
+                            let _ =
+                                tx.send(BgEvent::ActionFailed(format!("Lỗi xoá tin nhắn: {e}")));
                         }
                     }
                 });
@@ -1169,8 +1189,8 @@ impl<'a> TuiApp<'a> {
             }
             KeyCode::Char('w') if self.focus != Focus::Input => {
                 self.confirm = Some(ConfirmAction {
-                    question:
-                        "Xoá lịch sử tin nhắn cục bộ (zalo_history.db, threads_cache.json)?".into(),
+                    question: "Xoá lịch sử tin nhắn cục bộ (zalo_history.db, threads_cache.json)?"
+                        .into(),
                     detail: "Session đăng nhập giữ nguyên. Thao tác này không thể hoàn tác.".into(),
                     kind: ConfirmKind::WipeLocalData,
                     thread_id: String::new(),
@@ -1597,7 +1617,9 @@ fn ui_draw(f: &mut Frame, app: &mut TuiApp<'_>) {
         Span::raw(" | Chưa đọc: "),
         Span::styled(
             total_unread.to_string(),
-            Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::LightRed)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" | "),
         Span::styled(&app.status, Style::default().fg(Color::Yellow)),
@@ -1738,12 +1760,7 @@ fn ui_draw(f: &mut Frame, app: &mut TuiApp<'_>) {
 
     let (name, id, is_group, msg_count) = match app.threads.get(app.selected_thread) {
         Some(t) => (t.name.clone(), t.id.clone(), t.is_group, t.messages.len()),
-        None => (
-            "Chưa chọn hội thoại".to_string(),
-            String::new(),
-            false,
-            0,
-        ),
+        None => ("Chưa chọn hội thoại".to_string(), String::new(), false, 0),
     };
     let kind = if is_group { "Nhóm" } else { "Cá nhân" };
     let chat_header = Paragraph::new(Line::from(vec![
@@ -1831,7 +1848,11 @@ fn ui_draw(f: &mut Frame, app: &mut TuiApp<'_>) {
         let quote = format!(
             " {}: {}",
             q.sender,
-            q.text.replace('\n', " ").chars().take(120).collect::<String>()
+            q.text
+                .replace('\n', " ")
+                .chars()
+                .take(120)
+                .collect::<String>()
         );
         let reply = Paragraph::new(quote)
             .block(
@@ -2045,7 +2066,10 @@ fn build_chat_lines(
         for (ci, chunk) in chunks.iter().enumerate() {
             if ci == 0 {
                 let mut spans = prefix.clone();
-                spans.push(Span::styled(chunk.clone(), Style::default().fg(Color::White)));
+                spans.push(Span::styled(
+                    chunk.clone(),
+                    Style::default().fg(Color::White),
+                ));
                 lines.push(Line::from(spans));
             } else {
                 lines.push(Line::from(vec![
@@ -2209,15 +2233,23 @@ fn render_help(f: &mut Frame, area: Rect) {
             .add_modifier(Modifier::BOLD),
     )));
     content.push(Line::raw(""));
-    content.push(help_line("Tab / BackTab", "Chuyển vùng: Danh sách -> Tin nhắn -> Soạn tin"));
+    content.push(help_line(
+        "Tab / BackTab",
+        "Chuyển vùng: Danh sách -> Tin nhắn -> Soạn tin",
+    ));
     content.push(help_line("F1 / ?", "Mở trợ giúp này"));
     content.push(help_line("q / Ctrl+C", "Thoát (q chỉ khi không gõ tin)"));
     content.push(Line::raw(""));
     content.push(Line::from(Span::styled(
         "-- Danh sách hội thoại --",
-        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
     )));
-    content.push(help_line("Up/Down j/k", "Chọn hội thoại (cuộn chuột cũng được)"));
+    content.push(help_line(
+        "Up/Down j/k",
+        "Chọn hội thoại (cuộn chuột cũng được)",
+    ));
     content.push(help_line("PgUp/PgDn", "Nhảy 10 hội thoại"));
     content.push(help_line("Home / End", "Hội thoại đầu / cuối"));
     content.push(help_line("/", "Tìm theo tên, ID, nội dung, tin nhắn"));
@@ -2230,25 +2262,35 @@ fn render_help(f: &mut Frame, area: Rect) {
     content.push(Line::raw(""));
     content.push(Line::from(Span::styled(
         "-- Tin nhắn --",
-        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
     )));
     content.push(help_line("Up/Down j/k", "Chọn tin nhắn"));
     content.push(help_line("PgUp/PgDn", "Cuộn nhanh"));
     content.push(help_line("Home / End", "Đầu / cuối hội thoại"));
-    content.push(help_line("1 .. 6", "Thả cảm xúc nhanh (Thích, Yêu, Haha, Wow, Buồn, Phẫn nộ)"));
+    content.push(help_line(
+        "1 .. 6",
+        "Thả cảm xúc nhanh (Thích, Yêu, Haha, Wow, Buồn, Phẫn nộ)",
+    ));
     content.push(help_line("y", "Trả lời tin đang chọn"));
     content.push(help_line("d", "Xoá tin nhắn (chỉ phía bạn)"));
     content.push(help_line("o", "Mở liên kết của tin nhắn"));
     content.push(Line::raw(""));
     content.push(Line::from(Span::styled(
         "-- Soạn tin / đính kèm --",
-        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
     )));
     content.push(help_line("Enter", "Gửi tin nhắn"));
     content.push(help_line("Ctrl+U", "Xoá toàn bộ ô soạn"));
     content.push(help_line("Ctrl+X", "Huỷ trả lời"));
     content.push(help_line("Esc", "Lùi về vùng trước"));
-    content.push(help_line("F2", "Kho nhãn dán: Enter chọn bộ, Enter lần 2 để gửi"));
+    content.push(help_line(
+        "F2",
+        "Kho nhãn dán: Enter chọn bộ, Enter lần 2 để gửi",
+    ));
     content.push(help_line("F3", "Gửi tệp đính kèm bằng đường dẫn"));
     content.push(help_line("l", "Dev log inspector (chỉ chế độ --dev)"));
     content.push(Line::raw(""));
@@ -2277,7 +2319,11 @@ fn render_sticker_overlay(f: &mut Frame, area: Rect, app: &TuiApp<'_>) {
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(modal_area);
 
-    let loading = if app.sticker.loading { " (đang tải...)" } else { "" };
+    let loading = if app.sticker.loading {
+        " (đang tải...)"
+    } else {
+        ""
+    };
     let packs_title = if app.sticker.stage == 0 {
         format!(
             " Kho nhãn dán ({} bộ){loading} [ĐANG CHỌN] — Enter để mở bộ ",
@@ -2295,10 +2341,7 @@ fn render_sticker_overlay(f: &mut Frame, area: Rect, app: &TuiApp<'_>) {
         .iter()
         .map(|p| {
             ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!(" {} ", p.name),
-                    Style::default().fg(Color::White),
-                ),
+                Span::styled(format!(" {} ", p.name), Style::default().fg(Color::White)),
                 Span::styled(
                     format!("({} sticker)", p.total_image),
                     Style::default().fg(Color::DarkGray),
@@ -2517,7 +2560,10 @@ fn render_log_modal(f: &mut Frame, area: Rect, scroll: usize) {
     )]));
     for e in entries.iter().rev() {
         let status_color = if e.is_error { Color::Red } else { Color::Green };
-        let status_str = e.status.map(|s| s.to_string()).unwrap_or_else(|| "ERR".into());
+        let status_str = e
+            .status
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "ERR".into());
 
         content.push(Line::from(vec![
             Span::styled(
@@ -2530,7 +2576,10 @@ fn render_log_modal(f: &mut Frame, area: Rect, scroll: usize) {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{:<3} ", status_str), Style::default().fg(status_color)),
+            Span::styled(
+                format!("{:<3} ", status_str),
+                Style::default().fg(status_color),
+            ),
             Span::styled(
                 format!("({}ms) ", e.latency_ms),
                 Style::default().fg(Color::DarkGray),
@@ -2592,7 +2641,10 @@ mod tests {
 
     #[test]
     fn wraps_words_to_width() {
-        assert_eq!(wrap_text("a b c", 3), vec!["a b".to_string(), "c".to_string()]);
+        assert_eq!(
+            wrap_text("a b c", 3),
+            vec!["a b".to_string(), "c".to_string()]
+        );
     }
 
     #[test]

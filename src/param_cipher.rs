@@ -155,7 +155,10 @@ mod tests {
         // "30,abc,1000" = 11 bytes → one 16-byte block → 32 hex chars.
         assert_eq!(p.zcid.len() % 32, 0);
         assert!(!p.zcid.is_empty());
-        assert!(p.zcid.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+        assert!(p
+            .zcid
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
     }
 
     #[test]
@@ -176,7 +179,9 @@ mod tests {
     #[test]
     fn body_carries_v2_markers() {
         let p = ParamCipher::new("30", "abc", 1000).unwrap();
-        let b = p.build_body("30", "693", &json!({"a": 1}), "loginbypasswv2").unwrap();
+        let b = p
+            .build_body("30", "693", &json!({"a": 1}), "loginbypasswv2")
+            .unwrap();
         assert_eq!(b["enc_ver"], "v2");
         assert_eq!(b["type"], "30");
         assert_eq!(b["client_version"], "693");
@@ -202,7 +207,9 @@ mod tests {
     #[test]
     fn random_hex_length() {
         assert_eq!(random_hex(10).len(), 10);
-        assert!(random_hex(10).chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(random_hex(10)
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
     }
 
     /// Real capture from a live login: the server answered error_code 0 and returned this
@@ -212,11 +219,14 @@ mod tests {
     fn decrypts_real_login_response() {
         const ENK: &str = "0FCB6C6570D6E640AC3600DB0FED524F";
         const DATA: &str = "/AUIVJkkEIKTFZRhudPnX2ACqczgaUoCGbNa1ghAj/LnlDAFGlXg4ph8xovT2dKOY9sodSJji03BTHxGufRR5tjZsREykolY59EYa2/5xkoPmePwPeeIF3DgDZ4CD3xlopudNCKuD1K16Kre9yIUm+j1uhXbXbnwVvrYA8UAQnpMME3tjTAle2W4HaNd8YKt";
-        let pt = crypto::decode_aes(ENK.as_bytes(), DATA)
-            .expect("enk must decrypt the real response");
+        let pt =
+            crypto::decode_aes(ENK.as_bytes(), DATA).expect("enk must decrypt the real response");
         let v: Value = serde_json::from_str(&pt).expect("decrypted payload is JSON");
         // The envelope carries the real verdict — this is what the client must read.
-        assert_eq!(v["error_code"], 18022, "captured reply was Invalid Signature");
+        assert_eq!(
+            v["error_code"], 18022,
+            "captured reply was Invalid Signature"
+        );
         assert_eq!(v["error_message"], "Invalid Signature");
     }
 }

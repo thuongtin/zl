@@ -21,7 +21,6 @@ use crate::logger::{self, FindingLevel, LogEntry, ScanFinding};
 use crate::qr::QrLogin;
 use crate::session::Session;
 
-
 mod messages;
 mod modals;
 mod stickers;
@@ -29,11 +28,11 @@ mod theme;
 mod worker;
 mod workspace;
 
-pub use theme::{emoji_to_tex_key, load_app_icon, lucide, REACTION_LIST};
-pub use worker::WorkerCmd;
 use messages::*;
 use stickers::*;
 use theme::*;
+pub use theme::{emoji_to_tex_key, load_app_icon, lucide, REACTION_LIST};
+pub use worker::WorkerCmd;
 use worker::*;
 
 pub enum GuiEvent {
@@ -179,7 +178,9 @@ pub fn is_newer_semver(remote: &str, current: &str) -> bool {
             .split(['-', '+'])
             .next()
             .unwrap_or("");
-        let mut parts = clean.split('.').filter_map(|p| p.trim().parse::<u64>().ok());
+        let mut parts = clean
+            .split('.')
+            .filter_map(|p| p.trim().parse::<u64>().ok());
         (
             parts.next().unwrap_or(0),
             parts.next().unwrap_or(0),
@@ -329,7 +330,6 @@ impl AppSettings {
         }
     }
 }
-
 
 /// Bubbles rendered per step in the chat view; "Tải thêm tin nhắn cũ" adds another step.
 const CHAT_RENDER_STEP: usize = 150;
@@ -667,11 +667,8 @@ impl ZaloGuiApp {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
                 GuiEvent::QrReady { qr_image, .. } => {
-                    self.qr_texture = Some(ctx.load_texture(
-                        "qr_code_tex",
-                        qr_image,
-                        TextureOptions::NEAREST,
-                    ));
+                    self.qr_texture =
+                        Some(ctx.load_texture("qr_code_tex", qr_image, TextureOptions::NEAREST));
                     self.qr_status = "Mở ứng dụng Zalo trên điện thoại và quét mã QR".into();
                     self.login_in_progress = false;
                 }
@@ -756,11 +753,9 @@ impl ZaloGuiApp {
                             };
                             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
                             if !is_focused {
-                                ctx.send_viewport_cmd(
-                                    egui::ViewportCommand::RequestUserAttention(
-                                        egui::UserAttentionType::Informational,
-                                    ),
-                                );
+                                ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                                    egui::UserAttentionType::Informational,
+                                ));
                             }
                         }
                         crate::chat::deduplicate_threads(&mut self.threads, Some(&live_ids));
@@ -784,9 +779,8 @@ impl ZaloGuiApp {
                 GuiEvent::SessionExpired(reason) => {
                     self.is_logged_in = false;
                     self.qr_texture = None;
-                    self.qr_status = format!(
-                        "{reason} — Quét mã QR bên dưới để khôi phục phiên trực tuyến."
-                    );
+                    self.qr_status =
+                        format!("{reason} — Quét mã QR bên dưới để khôi phục phiên trực tuyến.");
                     self.status_msg = format!("{reason} (Lịch sử tin nhắn vẫn được bảo toàn)");
                 }
                 GuiEvent::SessionUnreachable(reason) => {
@@ -823,7 +817,11 @@ impl ZaloGuiApp {
                         } else {
                             msg_id
                         };
-                        if !t.messages.iter().any(|m| !m.id.is_empty() && m.id == final_id) {
+                        if !t
+                            .messages
+                            .iter()
+                            .any(|m| !m.id.is_empty() && m.id == final_id)
+                        {
                             t.messages.push(ChatMessage {
                                 id: final_id,
                                 sender: "Tôi".into(),
@@ -855,7 +853,11 @@ impl ZaloGuiApp {
                         } else {
                             msg_id
                         };
-                        if !t.messages.iter().any(|m| !m.id.is_empty() && m.id == final_id) {
+                        if !t
+                            .messages
+                            .iter()
+                            .any(|m| !m.id.is_empty() && m.id == final_id)
+                        {
                             t.messages.push(ChatMessage {
                                 id: final_id,
                                 sender: "Tôi".into(),
@@ -878,7 +880,11 @@ impl ZaloGuiApp {
                     if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                         t.preview = msg.text.clone();
                         t.time = msg.time.clone();
-                        if !t.messages.iter().any(|m| !m.id.is_empty() && m.id == msg.id) {
+                        if !t
+                            .messages
+                            .iter()
+                            .any(|m| !m.id.is_empty() && m.id == msg.id)
+                        {
                             t.messages.push(msg);
                             t.messages.sort_by_key(|m| m.ts);
                         }
@@ -901,7 +907,11 @@ impl ZaloGuiApp {
                         } else {
                             msg_id
                         };
-                        if !t.messages.iter().any(|m| !m.id.is_empty() && m.id == final_id) {
+                        if !t
+                            .messages
+                            .iter()
+                            .any(|m| !m.id.is_empty() && m.id == final_id)
+                        {
                             t.messages.push(ChatMessage {
                                 id: final_id,
                                 sender: "Tôi".into(),
@@ -993,7 +1003,11 @@ impl ZaloGuiApp {
                 } => {
                     self.loading_sticker_packs.remove(&cate_id);
                     let count = items.len();
-                    if !self.pinned_sticker_packs.iter().any(|(id, _)| *id == cate_id) {
+                    if !self
+                        .pinned_sticker_packs
+                        .iter()
+                        .any(|(id, _)| *id == cate_id)
+                    {
                         self.pinned_sticker_packs.insert(0, (cate_id, name.clone()));
                     }
                     self.sticker_pack_items.insert(cate_id, items);
@@ -1100,10 +1114,7 @@ impl ZaloGuiApp {
                     self.phone_lookup_loading = false;
                     self.phone_lookup_error = None;
                     self.phone_modal_open = true;
-                    self.show_toast(format!(
-                        "Đã tìm thấy tài khoản: {}",
-                        res.display_name
-                    ));
+                    self.show_toast(format!("Đã tìm thấy tài khoản: {}", res.display_name));
                     self.friend_status_map
                         .insert(res.user_id.clone(), res.friendship);
                     self.phone_lookup_result = Some(res);
@@ -1149,7 +1160,9 @@ impl ZaloGuiApp {
                                 "calling" | "ringing" => "Đang đổ chuông…".into(),
                                 "incoming_ringing" => "Cuộc gọi đến đang đổ chuông…".into(),
                                 "connecting" => "Đang kết nối luồng âm thanh/video…".into(),
-                                "incall" | "connected" => "Đang trong cuộc gọi (Pure-Rust VoIP)".into(),
+                                "incall" | "connected" => {
+                                    "Đang trong cuộc gọi (Pure-Rust VoIP)".into()
+                                }
                                 _ => format!("Đang kết nối ({state})…"),
                             };
                         }
@@ -1260,7 +1273,6 @@ impl ZaloGuiApp {
 // ---------------------------------------------------------------------------
 // Lightweight Background Session Worker (2-thread Tokio pool, off-UI disk I/O)
 // ---------------------------------------------------------------------------
-
 
 // ---------------------------------------------------------------------------
 // Main eframe::App Implementation
@@ -1577,8 +1589,11 @@ impl ZaloGuiApp {
                                 Pos2::new(mc.x - 1.2, mc.y + 1.2),
                                 Vec2::splat(7.8),
                             );
-                            ui.painter()
-                                .rect_stroke(back, Rounding::same(1.0), Stroke::new(1.25_f32, max_fg));
+                            ui.painter().rect_stroke(
+                                back,
+                                Rounding::same(1.0),
+                                Stroke::new(1.25_f32, max_fg),
+                            );
                             ui.painter().rect_filled(
                                 front,
                                 Rounding::same(1.0),
@@ -1588,12 +1603,18 @@ impl ZaloGuiApp {
                                     pal.bg_app
                                 },
                             );
-                            ui.painter()
-                                .rect_stroke(front, Rounding::same(1.0), Stroke::new(1.25_f32, max_fg));
+                            ui.painter().rect_stroke(
+                                front,
+                                Rounding::same(1.0),
+                                Stroke::new(1.25_f32, max_fg),
+                            );
                         } else {
                             let sq = Rect::from_center_size(mc, Vec2::splat(9.5));
-                            ui.painter()
-                                .rect_stroke(sq, Rounding::same(1.2), Stroke::new(1.3_f32, max_fg));
+                            ui.painter().rect_stroke(
+                                sq,
+                                Rounding::same(1.2),
+                                Stroke::new(1.3_f32, max_fg),
+                            );
                         }
                         if max_resp
                             .on_hover_text(if is_maximized {
@@ -1672,9 +1693,7 @@ impl ZaloGuiApp {
                             .fill(pal.primary.linear_multiply(0.12))
                             .stroke(Stroke::new(1.0_f32, pal.primary))
                             .rounding(Rounding::same(5.0));
-                            let r = ui
-                                .add(hist_btn)
-                                .on_hover_cursor(CursorIcon::PointingHand);
+                            let r = ui.add(hist_btn).on_hover_cursor(CursorIcon::PointingHand);
                             buttons_left_x = r.rect.left() - 8.0;
                             if r.clicked() {
                                 self.is_logged_in = true;
@@ -1686,7 +1705,10 @@ impl ZaloGuiApp {
                 // 3. Interactive drag / double-click region covering everything left of the control buttons
                 let drag_rect = Rect::from_min_max(
                     bar_rect.min,
-                    Pos2::new((buttons_left_x - 2.0).max(bar_rect.left() + 40.0), bar_rect.max.y),
+                    Pos2::new(
+                        (buttons_left_x - 2.0).max(bar_rect.left() + 40.0),
+                        bar_rect.max.y,
+                    ),
                 );
                 let drag_resp = ui.interact(
                     drag_rect,

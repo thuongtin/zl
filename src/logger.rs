@@ -3,7 +3,7 @@
 //! In Dev mode (`--dev`), logs raw decrypted payloads, endpoint metrics, and provides
 //! a diagnostic scanner. In Production mode, logs and dev panels are hidden and sanitized.
 
-use std::sync::{Arc, Mutex, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct LogEntry {
@@ -52,9 +52,8 @@ impl Default for LoggerState {
     }
 }
 
-pub static LOGGER: LazyLock<Arc<Mutex<LoggerState>>> = LazyLock::new(|| {
-    Arc::new(Mutex::new(LoggerState::default()))
-});
+pub static LOGGER: LazyLock<Arc<Mutex<LoggerState>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(LoggerState::default())));
 
 /// Initialize logging configuration.
 pub fn init(dev_mode: bool) {
@@ -209,7 +208,8 @@ pub fn scan_logs() -> Vec<ScanFinding> {
                     level: FindingLevel::Warning,
                     title: "Thiếu cookie phiên (600 zpw_sek not found)".into(),
                     detail: format!("Endpoint {} yêu cầu cookie phiên xác thực.", e.url),
-                    suggestion: "Đảm bảo quét QR hoặc đăng nhập mật khẩu đã hoàn tất trước khi gọi.".into(),
+                    suggestion:
+                        "Đảm bảo quét QR hoặc đăng nhập mật khẩu đã hoàn tất trước khi gọi.".into(),
                 });
             }
         }
@@ -219,7 +219,10 @@ pub fn scan_logs() -> Vec<ScanFinding> {
         findings.push(ScanFinding {
             level: FindingLevel::Info,
             title: "Trạng thái giao thức hoạt động tốt".into(),
-            detail: format!("Đã quét {} requests, toàn bộ phản hồi mã thành công (200 OK / error_code 0).", entries.len()),
+            detail: format!(
+                "Đã quét {} requests, toàn bộ phản hồi mã thành công (200 OK / error_code 0).",
+                entries.len()
+            ),
             suggestion: "Không phát hiện lỗi mã hoá hay rò rỉ giao thức.".into(),
         });
     }

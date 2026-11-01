@@ -18,7 +18,10 @@ fn embed_windows_icon() -> Result<(), Box<dyn std::error::Error>> {
     use std::path::PathBuf;
 
     let ico = std::fs::read("src/assets/app_icon.ico")?;
-    if ico.len() < 6 || u16::from_le_bytes([ico[0], ico[1]]) != 0 || u16::from_le_bytes([ico[2], ico[3]]) != 1 {
+    if ico.len() < 6
+        || u16::from_le_bytes([ico[0], ico[1]]) != 0
+        || u16::from_le_bytes([ico[2], ico[3]]) != 1
+    {
         return Err("Invalid ICO header".into());
     }
     let count = u16::from_le_bytes([ico[4], ico[5]]) as usize;
@@ -91,7 +94,13 @@ fn embed_windows_icon() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(target_os = "windows")]
-fn write_res_header(buf: &mut Vec<u8>, data_size: u32, res_type: u16, res_name: u16, mem_flags: u16) {
+fn write_res_header(
+    buf: &mut Vec<u8>,
+    data_size: u32,
+    res_type: u16,
+    res_name: u16,
+    mem_flags: u16,
+) {
     buf.extend_from_slice(&data_size.to_le_bytes());
     buf.extend_from_slice(&32u32.to_le_bytes()); // HeaderSize = 32
     buf.extend_from_slice(&0xFFFFu16.to_le_bytes());

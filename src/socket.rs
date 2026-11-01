@@ -168,7 +168,11 @@ fn inflate(buf: &[u8]) -> Result<Vec<u8>> {
         let mut out = Vec::new();
         match make(buf).read_to_end(&mut out) {
             Ok(_) if !out.is_empty() => {
-                trace(format!("inflate ok via {name}: {} -> {} bytes", buf.len(), out.len()));
+                trace(format!(
+                    "inflate ok via {name}: {} -> {} bytes",
+                    buf.len(),
+                    out.len()
+                ));
                 return Ok(out);
             }
             Ok(_) => last_err = Some(anyhow!("{name}: empty output")),
@@ -307,7 +311,10 @@ fn build_url(sess: &Session, endpoint_idx: usize) -> String {
 fn queues_from_auth(auth: &Value) -> Vec<(u16, u8)> {
     let mut out: Vec<(u16, u8)> = Vec::new();
     for key in ["ctrl_qCmds", "qCmds"] {
-        if let Some(arr) = auth.pointer(&format!("/data/{key}")).and_then(|v| v.as_array()) {
+        if let Some(arr) = auth
+            .pointer(&format!("/data/{key}"))
+            .and_then(|v| v.as_array())
+        {
             for q in arr {
                 let cmd = q.get("cmd").and_then(|v| v.as_u64());
                 let sub = q.get("subCmd").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -338,13 +345,7 @@ fn pull_frame(cmd: u16, sub_cmd: u8, req_id: &str) -> Vec<u8> {
     encode_frame(cmd, sub_cmd, 1, Some(&data))
 }
 
-fn pull_next_frame(
-    cmd: u16,
-    sub_cmd: u8,
-    req_id: &str,
-    last_id: Value,
-    pre_ids: Value,
-) -> Vec<u8> {
+fn pull_next_frame(cmd: u16, sub_cmd: u8, req_id: &str, last_id: Value, pre_ids: Value) -> Vec<u8> {
     let data = json!({
         "first": false,
         "reqId": req_id,

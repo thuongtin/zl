@@ -66,12 +66,21 @@ async fn main() -> Result<()> {
         let url = format!("{}/api/login/reqqr?{query}", s.domains.auth);
         let resp = s.get(&url).await?;
         let decrypted = s.maybe_decrypt(resp, cipher.encrypt_key.as_bytes()).await;
-        let code = decrypted.get("error_code").and_then(|c| c.as_i64()).unwrap_or(-1);
-        let msg = decrypted.get("error_message").and_then(|c| c.as_str()).unwrap_or("");
+        let code = decrypted
+            .get("error_code")
+            .and_then(|c| c.as_i64())
+            .unwrap_or(-1);
+        let msg = decrypted
+            .get("error_message")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
         println!("tag: '{:<12}' -> code: {:<6} msg: {}", tag, code, msg);
 
         if code == 0 {
-            println!("SUCCESS! Decrypted payload:\n{}", serde_json::to_string_pretty(&decrypted)?);
+            println!(
+                "SUCCESS! Decrypted payload:\n{}",
+                serde_json::to_string_pretty(&decrypted)?
+            );
             break;
         }
     }

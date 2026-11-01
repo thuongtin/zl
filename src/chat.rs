@@ -9,6 +9,14 @@ use crate::session::{obj, Session};
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ChatMessage {
+    #[serde(default)]
+    pub kind: crate::message_model::MessageKind,
+    #[serde(default)]
+    pub wire_ref: crate::message_model::WireMessageRef,
+    #[serde(default)]
+    pub unread_policy: crate::message_model::UnreadPolicy,
+    #[serde(default)]
+    pub delivery: crate::message_model::DeliveryState,
     pub id: String,
     pub sender: String,
     pub text: String,
@@ -29,6 +37,20 @@ pub struct ChatMessage {
     pub reply_to_text: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reactions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reaction_summaries: Vec<crate::reactions::ReactionSummary>,
+    #[serde(default)]
+    pub reaction_snapshot: bool,
+    #[serde(default)]
+    pub reaction_authoritative_snapshot: bool,
+    #[serde(skip)]
+    pub reaction_snapshot_fresh: bool,
+    #[serde(default)]
+    pub reaction_snapshot_provenance: crate::reactions::ReactionSnapshotProvenance,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub reaction_versions: std::collections::BTreeMap<String, crate::reactions::ReactionVersion>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_message_id: String,
     #[serde(default)]
     pub is_pinned: bool,
     #[serde(default)]
@@ -43,9 +65,300 @@ pub struct ChatMessage {
     pub link_thumb: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_src: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_source: Option<Value>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub resolved_mention_uids: std::collections::BTreeMap<String, String>,
 }
 
 impl ChatMessage {
+    pub fn merge_message_metadata(&mut self, incoming: &Self) -> bool {
+        let previous_mentions = self.resolved_mention_uids.clone();
+        self.resolved_mention_uids
+            .extend(incoming.resolved_mention_uids.clone());
+        let before = (
+            self.kind,
+            self.wire_ref.clone(),
+            self.unread_policy.clone(),
+            self.delivery,
+            self.history_source.clone(),
+        );
+        if incoming.kind != crate::message_model::MessageKind::Unknown {
+            self.kind = incoming.kind;
+        }
+        if !incoming.wire_ref.fields.is_empty() {
+            let mut fields = self.wire_ref.fields.clone();
+            fields.extend(incoming.wire_ref.fields.clone());
+            self.wire_ref = crate::message_model::WireMessageRef::from_raw(&Value::Object(
+                fields.into_iter().collect(),
+            ));
+            if incoming.unread_policy.params_ext_present {
+                self.unread_policy = incoming.unread_policy.clone();
+            }
+        }
+        if incoming.history_source.is_some() {
+            self.history_source = incoming.history_source.clone();
+        }
+        self.delivery = self.delivery.merge(incoming.delivery);
+        previous_mentions != self.resolved_mention_uids
+            || before
+                != (
+                    self.kind,
+                    self.wire_ref.clone(),
+                    self.unread_policy.clone(),
+                    self.delivery,
+                    self.history_source.clone(),
+                )
+    }
+
+    /// Keep aggregate counts and event replay cursors across cache/network merges.
+    pub fn merge_reaction_metadata(&mut self, incoming: &Self) -> bool {
+        let model_changed = self.merge_message_metadata(incoming);
+        let previous_provenance = self.reaction_snapshot_provenance.clone();
+        let before = (
+            self.reaction_summaries.clone(),
+            self.reactions.clone(),
+            self.client_message_id.clone(),
+            self.reaction_snapshot,
+            self.reaction_authoritative_snapshot,
+            self.reaction_versions.clone(),
+        );
+        if self.client_message_id.is_empty() {
+            self.client_message_id = incoming.client_message_id.clone();
+        }
+        let accept_snapshot = incoming.reaction_authoritative_snapshot
+            && (incoming.reaction_snapshot_fresh || !self.reaction_authoritative_snapshot)
+            && self.reaction_snapshot_provenance.accepts_snapshot(
+                &incoming.reaction_snapshot_provenance,
+                &self.reaction_versions,
+                incoming.reaction_snapshot_fresh,
+            );
+
+        if accept_snapshot {
+            self.reaction_snapshot_provenance = incoming.reaction_snapshot_provenance.clone();
+            self.reaction_summaries = incoming.reaction_summaries.clone();
+            self.reaction_authoritative_snapshot = true;
+            self.reaction_snapshot = true;
+            for (user, version) in &mut self.reaction_versions {
+                version.covered_events.append(&mut version.events);
+                version.baseline = incoming
+                    .reaction_summaries
+                    .iter()
+                    .filter_map(|s| Some((s.r_type?, *s.reactor_counts.get(user)?)))
+                    .collect();
+                version.ledger_initialized = true;
+                version.snapshot_baseline = true;
+            }
+            for (user, incoming_version) in &incoming.reaction_versions {
+                let covered = self
+                    .reaction_versions
+                    .get(user)
+                    .map(|v| v.covered_events.clone())
+                    .unwrap_or_default();
+                let mut version = incoming_version.clone();
+                version.covered_events.extend(covered);
+                if incoming.reaction_snapshot_fresh {
+                    version.covered_events.append(&mut version.events);
+                    version.baseline = incoming
+                        .reaction_summaries
+                        .iter()
+                        .filter_map(|s| Some((s.r_type?, *s.reactor_counts.get(user)?)))
+                        .collect();
+                    version.ledger_initialized = true;
+                    version.snapshot_baseline = true;
+                }
+                self.reaction_versions.insert(user.clone(), version);
+            }
+        }
+        if !self.reaction_authoritative_snapshot
+            && !incoming.reaction_authoritative_snapshot
+            && (incoming.reaction_snapshot || !incoming.reaction_summaries.is_empty())
+            && self.reaction_versions.is_empty()
+        {
+            self.reaction_summaries = incoming.reaction_summaries.clone();
+            self.reactions = crate::reactions::legacy_emojis(&self.reaction_summaries);
+            self.reaction_snapshot = incoming.reaction_snapshot;
+        }
+        if !self.reaction_authoritative_snapshot
+            && !incoming.reaction_authoritative_snapshot
+            && !self.reaction_versions.is_empty()
+            && (incoming.reaction_snapshot || !incoming.reaction_summaries.is_empty())
+        {
+            crate::reactions::merge_untracked_snapshot(
+                &mut self.reaction_summaries,
+                &incoming.reaction_summaries,
+                &self.reaction_versions,
+                incoming.reaction_snapshot && incoming.reaction_versions.is_empty(),
+            );
+        }
+        for (user, version) in &incoming.reaction_versions {
+            if accept_snapshot {
+                continue;
+            }
+            if !self.reaction_versions.contains_key(user) {
+                if self.reaction_authoritative_snapshot {
+                    for event in &version.events {
+                        if event.r_type >= -1 {
+                            self.apply_reaction(event);
+                        }
+                    }
+                    continue;
+                }
+                self.reaction_versions.insert(user.clone(), version.clone());
+                if version.ledger_initialized {
+                    version.rebuild(&mut self.reaction_summaries, user);
+                }
+            } else {
+                for event in &version.events {
+                    if event.r_type >= -1 {
+                        self.apply_reaction(event);
+                    }
+                }
+            }
+        }
+        if !self.reaction_summaries.is_empty()
+            || incoming.reaction_snapshot
+            || !incoming.reaction_versions.is_empty()
+        {
+            self.reactions = crate::reactions::legacy_emojis(&self.reaction_summaries);
+        } else if self.reactions.is_empty()
+            && self.reaction_versions.is_empty()
+            && !self.reaction_snapshot
+        {
+            self.reactions = incoming.reactions.clone();
+        }
+        model_changed
+            || previous_provenance != self.reaction_snapshot_provenance
+            || before
+                != (
+                    self.reaction_summaries.clone(),
+                    self.reactions.clone(),
+                    self.client_message_id.clone(),
+                    self.reaction_snapshot,
+                    self.reaction_authoritative_snapshot,
+                    self.reaction_versions.clone(),
+                )
+    }
+
+    pub fn apply_reaction(&mut self, event: &crate::reactions::ReactionEvent) -> bool {
+        if event.sender_id.is_empty() || event.r_type < -1 {
+            return false;
+        }
+        if self.reaction_summaries.is_empty() && !self.reactions.is_empty() {
+            self.reaction_summaries =
+                crate::reactions::parse_reactions(&json!({"reactions":self.reactions}));
+        }
+        let changed = self
+            .reaction_versions
+            .entry(event.sender_id.clone())
+            .or_default()
+            .record(
+                &mut self.reaction_summaries,
+                event,
+                self.reaction_authoritative_snapshot,
+            );
+        self.reactions = crate::reactions::legacy_emojis(&self.reaction_summaries);
+        self.reaction_snapshot = true;
+        changed
+    }
+
+    /// Repair cached media metadata without changing captions or signed URL bytes.
+    pub fn hydrate_media_metadata(&mut self) -> bool {
+        if self.text == "[Tin nhắn đã thu hồi]" {
+            return false;
+        }
+        let before = (
+            self.link_url.clone(),
+            self.link_thumb.clone(),
+            self.link_src.clone(),
+        );
+        let source_kind = self.history_source.as_ref().and_then(|source| {
+            let kind = source
+                .get("msgType")
+                .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse().ok()));
+            match kind {
+                Some(2..=4) => Some("Hình ảnh Zalo"),
+                Some(19) => Some("Video Zalo"),
+                _ => None,
+            }
+        });
+        if let Some(source) = &self.history_source {
+            if let Some(attachment) = source
+                .get("meta")
+                .and_then(|m| m.get("attachsList"))
+                .and_then(Value::as_array)
+                .and_then(|a| a.first())
+            {
+                let (url, _, _, thumb, _) = extract_link_info(attachment);
+                if self.link_url.is_none() {
+                    self.link_url = url;
+                }
+                if self.link_thumb.is_none() {
+                    self.link_thumb = thumb;
+                }
+            }
+        }
+        let label_kind = match self.text.trim() {
+            "[Photo]" | "[Hình ảnh]" => Some("Hình ảnh Zalo"),
+            "[Video]" => Some("Video Zalo"),
+            _ => None,
+        };
+        if let Some(kind) = source_kind.or(label_kind) {
+            self.link_src = Some(kind.into());
+            if kind == "Hình ảnh Zalo" && self.link_thumb.is_none() {
+                self.link_thumb = self.link_url.clone();
+            }
+        }
+        before
+            != (
+                self.link_url.clone(),
+                self.link_thumb.clone(),
+                self.link_src.clone(),
+            )
+    }
+
+    /// Fill independently missing card fields when an existing URL already exists.
+    // The parser layer wires this helper in the dependent protocol change.
+    #[allow(dead_code)]
+    fn merge_media_metadata(&mut self, incoming: &Self) -> bool {
+        if self.text == "[Tin nhắn đã thu hồi]" {
+            return false;
+        }
+        let before = (
+            self.link_url.clone(),
+            self.link_title.clone(),
+            self.link_desc.clone(),
+            self.link_thumb.clone(),
+            self.link_src.clone(),
+        );
+        if self.link_title.is_none() {
+            self.link_title = incoming.link_title.clone();
+        }
+        if self.link_desc.is_none() {
+            self.link_desc = incoming.link_desc.clone();
+        }
+        if self.link_thumb.is_none() {
+            self.link_thumb = incoming.link_thumb.clone();
+        }
+        if self.link_src.is_none()
+            || matches!(
+                incoming.link_src.as_deref(),
+                Some("Hình ảnh Zalo" | "Video Zalo")
+            )
+        {
+            self.link_src = incoming.link_src.clone().or_else(|| self.link_src.clone());
+        }
+        self.hydrate_media_metadata();
+        before
+            != (
+                self.link_url.clone(),
+                self.link_title.clone(),
+                self.link_desc.clone(),
+                self.link_thumb.clone(),
+                self.link_src.clone(),
+            )
+    }
+
     /// Compute the static PNG URL for a Zalo sticker (`compact-app-pc.b7bec208c4c8f73e09f8.js:7739583` & `18589292`).
     pub fn sticker_image_url(&self) -> Option<String> {
         let sid = self.sticker_id?;
@@ -75,6 +388,8 @@ impl ChatMessage {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Thread {
+    #[serde(default)]
+    pub presentation: SidebarPresentation,
     pub id: String,
     pub name: String,
     pub preview: String,
@@ -82,6 +397,241 @@ pub struct Thread {
     pub avatar: Option<String>,
     pub is_group: bool,
     pub messages: Vec<ChatMessage>,
+    #[serde(default)]
+    pub unread: crate::unread::UnreadState,
+}
+
+/// Durable sidebar metadata, including metadata-only startup snapshots.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct SidebarPresentation {
+    pub members: Vec<SidebarMember>,
+    /// Server totalMember only; never inferred from message senders or avatar samples.
+    pub member_count: Option<u64>,
+    pub last_message_ts: i64,
+    pub last_message_id: String,
+    pub last_sender: String,
+    pub last_sender_id: String,
+    pub last_outgoing: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct SidebarMember {
+    pub id: String,
+    pub name: String,
+    pub avatar: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarFontStyle {
+    Regular,
+    Semibold,
+}
+
+impl Thread {
+    pub fn sidebar_font_style(&self) -> SidebarFontStyle {
+        if self.unread.has_badge() {
+            SidebarFontStyle::Semibold
+        } else {
+            SidebarFontStyle::Regular
+        }
+    }
+
+    pub fn refresh_sidebar_presentation(&mut self) {
+        if let Some(message) = self
+            .messages
+            .iter()
+            .max_by_key(|m| crate::clock::normalize_ts_ms(m.ts))
+        {
+            let ts = crate::clock::normalize_ts_ms(message.ts);
+            if ts >= crate::clock::normalize_ts_ms(self.presentation.last_message_ts) {
+                let sender_id = sidebar_sender_id(message)
+                    .or_else(|| {
+                        (message.id == self.presentation.last_message_id
+                            && ts
+                                == crate::clock::normalize_ts_ms(self.presentation.last_message_ts))
+                        .then(|| self.presentation.last_sender_id.clone())
+                    })
+                    .unwrap_or_default();
+                let keep_resolved = message.id == self.presentation.last_message_id
+                    && ts == crate::clock::normalize_ts_ms(self.presentation.last_message_ts)
+                    && sender_id == self.presentation.last_sender_id
+                    && !self.presentation.last_sender.is_empty()
+                    && !self
+                        .presentation
+                        .last_sender
+                        .bytes()
+                        .all(|b| b.is_ascii_digit())
+                    && message.sender.bytes().all(|b| b.is_ascii_digit());
+                self.presentation.last_message_ts = message.ts;
+                self.presentation.last_message_id = message.id.clone();
+                if !keep_resolved {
+                    self.presentation.last_sender = message.sender.clone();
+                }
+                self.presentation.last_sender_id = sender_id;
+                self.presentation.last_outgoing = message.is_outgoing;
+            }
+        }
+    }
+
+    pub fn sidebar_preview(&self) -> String {
+        let latest = self
+            .messages
+            .iter()
+            .max_by_key(|m| crate::clock::normalize_ts_ms(m.ts))
+            .filter(|m| {
+                crate::clock::normalize_ts_ms(m.ts)
+                    > crate::clock::normalize_ts_ms(self.presentation.last_message_ts)
+                    || self.presentation.last_sender.is_empty()
+            });
+        let (sender, outgoing) = latest
+            .map(|m| (m.sender.as_str(), m.is_outgoing))
+            .unwrap_or((
+                &self.presentation.last_sender,
+                self.presentation.last_outgoing,
+            ));
+        let sender = self
+            .presentation
+            .members
+            .iter()
+            .find(|member| member.id == sender && !member.name.trim().is_empty())
+            .map(|member| member.name.as_str())
+            .unwrap_or(sender);
+        let text = self.preview.replace('\n', " ");
+        if text.is_empty() {
+            return text;
+        }
+        if outgoing {
+            if text.starts_with("Bạn: ") {
+                text
+            } else {
+                format!("Bạn: {text}")
+            }
+        } else if self.is_group
+            && !sender.trim().is_empty()
+            && !sender.trim().chars().all(|c| c.is_ascii_digit())
+        {
+            let prefix = format!("{}: ", sender.trim());
+            if text.starts_with(&prefix) {
+                text
+            } else {
+                format!("{prefix}{text}")
+            }
+        } else {
+            text
+        }
+    }
+
+    pub fn sidebar_activity_ts(&self) -> i64 {
+        self.messages
+            .iter()
+            .map(|m| crate::clock::normalize_ts_ms(m.ts))
+            .chain(std::iter::once(crate::clock::normalize_ts_ms(
+                self.presentation.last_message_ts,
+            )))
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub fn sidebar_timestamp(&self, now_ms: i64) -> String {
+        let ts = self.sidebar_activity_ts();
+        if ts > 0 {
+            crate::clock::sidebar_time_at(ts, now_ms)
+        } else {
+            self.time.clone()
+        }
+    }
+
+    /// Parse only group roster metadata observed in the original getmg-v2 consumer.
+    pub fn apply_group_sidebar_metadata(&mut self, info: &Value) {
+        if let Some(count) = info
+            .get("totalMember")
+            .and_then(|v| v.as_u64().or_else(|| v.as_str()?.parse().ok()))
+        {
+            self.presentation.member_count = Some(count);
+        }
+        let mut ids = Vec::new();
+        if let Some(list) = info.get("memVerList").and_then(Value::as_array) {
+            for item in list.iter().filter_map(Value::as_str) {
+                let id = item.split('_').next().unwrap_or_default();
+                if !id.is_empty() && !ids.iter().any(|s| s == id) {
+                    ids.push(id.to_owned());
+                }
+            }
+        } else if let Some(map) = info.get("memberVerMap").and_then(Value::as_object) {
+            ids.extend(map.keys().cloned());
+        }
+        let mut leaders = Vec::new();
+        if let Some(creator) = pick_str(info, &["creatorId"]) {
+            leaders.push(creator);
+        }
+        if let Some(admins) = info.get("adminIds").and_then(Value::as_array) {
+            leaders.extend(admins.iter().filter_map(Value::as_str).map(str::to_owned));
+        }
+        let mut ordered = Vec::new();
+        for id in leaders.into_iter().chain(ids.iter().cloned()) {
+            if ids.contains(&id) && !ordered.contains(&id) {
+                ordered.push(id);
+            }
+        }
+        ids = ordered;
+        let top = info.get("topMember").and_then(Value::as_array);
+        if let Some(top) = top {
+            for profile in top {
+                if let Some(id) = pick_str(profile, &["id", "userId", "uid"]) {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+            }
+        }
+        if !ids.is_empty() {
+            let previous = std::mem::take(&mut self.presentation.members);
+            self.presentation.members =
+                ids.into_iter()
+                    .map(|id| {
+                        let profile = top.and_then(|list| {
+                            list.iter().find(|p| {
+                                pick_str(p, &["id", "userId", "uid"]).as_ref() == Some(&id)
+                            })
+                        });
+                        let mut member = previous.iter().find(|m| m.id == id).cloned().unwrap_or(
+                            SidebarMember {
+                                id,
+                                ..Default::default()
+                            },
+                        );
+                        if let Some(profile) = profile {
+                            if let Some(name) =
+                                pick_str(profile, &["displayName", "zaloName", "name"])
+                            {
+                                member.name = name;
+                            }
+                            if let Some(avatar) = pick_str(profile, &["avatar", "avt"]) {
+                                member.avatar = Some(avatar);
+                            }
+                        }
+                        member
+                    })
+                    .collect();
+        }
+    }
+}
+
+pub fn sidebar_sender_id(message: &ChatMessage) -> Option<String> {
+    let raw = message.wire_ref.sender.as_ref().or_else(|| {
+        message
+            .history_source
+            .as_ref()
+            .and_then(|v| v.get("senderId"))
+    })?;
+    let id = match raw {
+        Value::String(v) => v.clone(),
+        Value::Number(v) if v.is_u64() => v.to_string(),
+        _ => return None,
+    };
+    (!id.is_empty() && id != "0" && id.bytes().all(|b| b.is_ascii_digit())).then_some(id)
 }
 
 /// Return `true` if a thread name is empty or a generic placeholder (`"Người dùng ..."`, `"Nhóm ..."`).
@@ -463,6 +1013,8 @@ pub fn save_threads_cache(threads: &[Thread]) {
     let slim: Vec<Thread> = threads
         .iter()
         .map(|t| Thread {
+            presentation: t.presentation.clone(),
+            unread: t.unread.clone(),
             id: t.id.clone(),
             name: t.name.clone(),
             preview: t.preview.clone(),
@@ -561,6 +1113,8 @@ pub async fn get_friends(s: &Session) -> Result<Vec<Thread>> {
             threads.insert(
                 0,
                 Thread {
+                    presentation: Default::default(),
+                    unread: Default::default(),
                     id: li.send2me_id.clone(),
                     name: "Cloud của tôi (Lưu trữ)".into(),
                     preview: "".into(),
@@ -619,6 +1173,8 @@ fn parse_thread(v: &Value) -> Option<Thread> {
         .unwrap_or_default();
 
     Some(Thread {
+        presentation: Default::default(),
+        unread: Default::default(),
         id,
         name,
         preview: String::new(),
@@ -2985,6 +3541,8 @@ pub async fn get_groups(s: &Session) -> Result<Vec<Thread>> {
     if let Some(map) = data_node.get("gridVerMap").and_then(Value::as_object) {
         for (grid, _ver) in map {
             groups.push(Thread {
+                presentation: Default::default(),
+                unread: Default::default(),
                 id: grid.clone(),
                 name: format!("Nhóm {}", grid),
                 preview: String::new(),
@@ -4001,6 +4559,8 @@ fn parse_chat_message(it: &Value) -> Option<ChatMessage> {
         link_desc,
         link_thumb,
         link_src,
+
+        ..Default::default()
     })
 }
 
@@ -4157,6 +4717,8 @@ pub fn merge_previews(threads: &mut Vec<Thread>, resp: &Value) {
                 // may linger in `clearUnreads` after removal, whereas active groups come from `get_groups`.
                 if !is_grp && !threads.iter().any(|t| t.id == tid) {
                     threads.push(Thread {
+                        presentation: Default::default(),
+                        unread: Default::default(),
                         id: tid.clone(),
                         name: format!("Người dùng {tid}"),
                         preview: String::new(),
@@ -4285,6 +4847,8 @@ pub fn merge_previews(threads: &mut Vec<Thread>, resp: &Value) {
                     format!("Người dùng {}", tid)
                 };
                 threads.push(Thread {
+                    presentation: Default::default(),
+                    unread: Default::default(),
                     id: tid,
                     name: default_name,
                     preview: parsed.text.clone(),
@@ -4860,6 +5424,8 @@ mod tests {
 
     fn sample_thread(id: &str) -> Thread {
         Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: id.into(),
             name: format!("Name {id}"),
             preview: String::new(),
@@ -4881,6 +5447,8 @@ mod tests {
             ..Default::default()
         };
         let mut target = Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: "t".into(),
             name: "A".into(),
             preview: String::new(),
@@ -5263,6 +5831,8 @@ mod tests {
     #[test]
     fn test_deduplicate_threads_migrates_session_scoped_ids() {
         let old_dtc = Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: "1000000000000000005".into(),
             name: "Đtc".into(),
             preview: "Hi".into(),
@@ -5280,6 +5850,8 @@ mod tests {
             }],
         };
         let new_dtc = Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: "1000000000000000006".into(),
             name: "Đtc".into(),
             preview: "".into(),
@@ -5299,6 +5871,8 @@ mod tests {
     #[test]
     fn test_merge_group_history_parses_stringified_cloud_data() {
         let mut cloud_thread = Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: "9000000000000000002".into(),
             name: "Cloud của tôi (Lưu trữ)".into(),
             preview: String::new(),
@@ -5370,6 +5944,8 @@ mod tests {
     #[test]
     fn test_prevent_cloud_message_pollution_across_threads() {
         let mut contact = Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: "1000000000000000009".into(),
             name: "Người dùng Test".into(),
             preview: String::new(),
@@ -5396,6 +5972,8 @@ mod tests {
         assert!(contact.messages.is_empty());
 
         let cloud = Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: "9000000000000000001".into(),
             name: "Cloud của tôi (Lưu trữ)".into(),
             preview: "Ghi chú Cloud của tôi".into(),
@@ -5413,6 +5991,8 @@ mod tests {
             }],
         };
         let polluted_contact = Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: "1000000000000000009".into(),
             name: "Người dùng Test".into(),
             preview: "Ghi chú Cloud của tôi".into(),
@@ -5434,5 +6014,42 @@ mod tests {
         assert_eq!(list[0].messages.len(), 1);
         assert!(list[1].messages.is_empty());
         assert!(list[1].preview.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod message_state_defaults_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_message_when_metadata_is_absent_uses_conservative_defaults() {
+        let message: ChatMessage = serde_json::from_value(json!({
+            "id": "msg-0001", "sender": "user-1", "text": "Hello",
+            "time": "", "is_outgoing": false, "ts": 1
+        }))
+        .unwrap();
+        assert_eq!(message.kind, crate::message_model::MessageKind::Unknown);
+        assert_eq!(
+            message.delivery,
+            crate::message_model::DeliveryState::default()
+        );
+        assert!(message.wire_ref.fields.is_empty());
+        assert!(message.reaction_summaries.is_empty());
+        assert!(message.resolved_mention_uids.is_empty());
+    }
+
+    #[test]
+    fn legacy_thread_when_sidebar_and_unread_are_absent_roundtrips() {
+        let thread: Thread = serde_json::from_value(json!({
+            "id": "thread-1", "name": "Example", "preview": "", "time": "",
+            "avatar": null, "is_group": false, "messages": []
+        }))
+        .unwrap();
+        assert_eq!(thread.presentation, SidebarPresentation::default());
+        assert_eq!(thread.unread, crate::unread::UnreadState::default());
+        let restored: Thread =
+            serde_json::from_value(serde_json::to_value(&thread).unwrap()).unwrap();
+        assert_eq!(restored.presentation, thread.presentation);
+        assert_eq!(restored.unread, thread.unread);
     }
 }

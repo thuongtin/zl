@@ -15,13 +15,16 @@ mod gui;
 mod logger;
 mod login;
 mod media;
+mod message_model;
 mod param_cipher;
 mod qr;
+mod reactions;
 mod session;
 mod socket;
 mod store;
 mod tui;
 mod ui;
+mod unread;
 mod voip_log;
 
 use anyhow::Result;

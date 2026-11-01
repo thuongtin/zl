@@ -21,3 +21,4 @@ pub mod unread;
 pub mod voip_log;
 
 pub mod data_dir;
+pub mod media_resources;

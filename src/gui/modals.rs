@@ -271,7 +271,7 @@ impl ZaloGuiApp {
         }
         if do_wipe {
             // Destructive and irreversible, so it asks first.
-            self.wipe_confirm_open = true;
+            self.confirm_local_wipe = true;
         }
         if close_menu {
             self.profile_menu_open = false;
@@ -3436,7 +3436,7 @@ impl ZaloGuiApp {
     }
 
     pub(super) fn render_wipe_confirm(&mut self, ctx: &egui::Context, pal: &ThemePalette) {
-        if !self.wipe_confirm_open {
+        if !self.confirm_local_wipe {
             return;
         }
         let mut open = true;
@@ -3500,12 +3500,12 @@ impl ZaloGuiApp {
                 });
             });
         if confirm {
-            self.wipe_confirm_open = false;
+            self.confirm_local_wipe = false;
             if let Some(tx) = WORKER_TX.get() {
                 let _ = tx.send(WorkerCmd::WipeLocalData);
             }
         } else if cancel || !open {
-            self.wipe_confirm_open = false;
+            self.confirm_local_wipe = false;
         }
     }
 

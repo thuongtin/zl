@@ -26,6 +26,7 @@ mod history;
 mod group_history;
 mod media_preview;
 mod messages;
+mod navigation;
 mod modals;
 mod persistence;
 mod phone_history;
@@ -423,9 +424,6 @@ impl AppSettings {
     }
 }
 
-// Keep the upstream window until the renderer layer switches to local pages.
-const CHAT_RENDER_STEP: usize = 150;
-
 #[cfg(test)]
 const MESSAGE_WINDOW_SIZE: usize = 200;
 
@@ -593,7 +591,6 @@ pub struct ZaloGuiApp {
     event_rx: Receiver<GuiEvent>,
     #[allow(dead_code)]
     event_tx: Sender<GuiEvent>,
-    chat_render_window: (String, usize),
 
     // Background poll trigger
     last_poll: std::time::Instant,
@@ -851,7 +848,6 @@ impl ZaloGuiApp {
             scanner_findings: Vec::new(),
             event_rx: rx,
             event_tx: tx.clone(),
-            chat_render_window: (String::new(), CHAT_RENDER_STEP),
             last_poll: std::time::Instant::now(),
         };
 

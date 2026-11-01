@@ -173,30 +173,23 @@ pub(super) fn truncate_chars<'a>(s: &'a str, max_chars: usize) -> std::borrow::C
     }
 }
 
-/// Extract up to 2 uppercase alphanumeric initials from a display name (e.g. `"Nguyễn An"` -> `"NA"`, `"Hoang"` -> `"H"`).
+/// Extract up to 2 uppercase initials from a display name (e.g. `"Nguyễn An"` -> `"NA"`, `"Hoang"` -> `"H"`).
 pub(super) fn avatar_initials(name: &str) -> String {
-    let clean_words: Vec<&str> = name
-        .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
-        .filter(|w| !w.is_empty())
-        .collect();
-    if clean_words.len() >= 2 {
-        let c1 = clean_words[0].chars().next().unwrap_or('Z').to_uppercase();
-        let c2 = clean_words[clean_words.len() - 1]
+    let words: Vec<&str> = name.split_whitespace().filter(|w| !w.is_empty()).collect();
+    if words.len() >= 2 {
+        let c1 = words[0].chars().next().unwrap_or('Z').to_uppercase();
+        let c2 = words[words.len() - 1]
             .chars()
             .next()
             .unwrap_or('U')
             .to_uppercase();
         format!("{c1}{c2}")
-    } else if let Some(first) = clean_words.first() {
-        first
-            .chars()
+    } else {
+        name.chars()
             .next()
             .unwrap_or('Z')
             .to_uppercase()
             .to_string()
-    } else {
-        "Z".to_string()
     }
 }
 
@@ -239,7 +232,12 @@ pub(super) fn matches_vn_query(haystack: &str, query_lower: &str, query_folded: 
     !query_folded.is_empty() && fold_vn_search(haystack).contains(query_folded)
 }
 
-fn paint_single_circle_avatar(
+/// Paint a circular user or group avatar: uses the real circular-masked Zalo profile image when
+/// `avatar_url` is available (fetching it asynchronously via `FetchStickerImage`), and falls back
+/// to a colored circle with initials while loading or when no URL exists.
+// The painter boundary keeps geometry and avatar metadata explicit.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn paint_user_avatar(
     painter: &egui::Painter,
     center: Pos2,
     radius: f32,
@@ -284,11 +282,10 @@ fn paint_single_circle_avatar(
 
     let av_col = avatar_color_for(name, is_group);
     painter.circle_filled(center, radius, av_col);
-    let initial = if radius >= 15.5 {
+    let initial = if radius >= 18.0 {
         avatar_initials(name)
     } else {
-        name.trim_matches(|c: char| !c.is_alphanumeric())
-            .chars()
+        name.chars()
             .next()
             .unwrap_or('Z')
             .to_uppercase()
@@ -298,198 +295,9 @@ fn paint_single_circle_avatar(
         center,
         egui::Align2::CENTER_CENTER,
         initial,
-        FontId::proportional((radius * 0.76).max(8.5)),
+        FontId::proportional((radius * 0.72).max(11.0)),
         Color32::WHITE,
     );
-}
-
-/// Paint a circular user or group avatar:
-/// - For 1-1 contacts or groups with a custom uploaded group photo (`http(s)://...`), renders the circular image.
-/// - For groups without a single custom photo (`multi:...` or `None`), renders Zalo PC's `zavatar-multi`
-///   composite layout (3-member triangle or 2x2 member grid with optional member count badge).
-pub(super) fn paint_user_avatar(
-    painter: &egui::Painter,
-    center: Pos2,
-    radius: f32,
-    name: &str,
-    is_group: bool,
-    avatar_url: Option<&str>,
-    textures: &HashMap<String, TextureHandle>,
-    loading: &mut HashSet<String>,
-) {
-    let raw_ava = avatar_url.map(str::trim).unwrap_or("");
-    let has_single_custom_photo = !raw_ava.is_empty()
-        && !raw_ava.starts_with("multi:")
-        && !raw_ava.ends_with("/default")
-        && (raw_ava.starts_with("http://") || raw_ava.starts_with("https://"));
-
-    if !is_group || has_single_custom_photo {
-        paint_single_circle_avatar(
-            painter, center, radius, name, is_group, avatar_url, textures, loading,
-        );
-        return;
-    }
-
-    // Parse composite group member slots (`multi:<total>;<name1>|<url1>;<name2>|<url2>;...`)
-    // or derive member slots from comma-separated group name (`"Đỗ Thành, Đtc, Hoang"`).
-    let mut slots: Vec<(String, String)> = Vec::new();
-    let mut total_members: usize = 0;
-    if let Some(rest) = raw_ava.strip_prefix("multi:") {
-        for (idx, part) in rest.split(';').enumerate() {
-            if idx == 0 && !part.contains('|') {
-                total_members = part.trim().parse::<usize>().unwrap_or(0);
-                continue;
-            }
-            if let Some((m_name, m_url)) = part.split_once('|') {
-                slots.push((m_name.trim().to_string(), m_url.trim().to_string()));
-            } else if !part.trim().is_empty() {
-                slots.push((part.trim().to_string(), String::new()));
-            }
-        }
-    }
-    if slots.is_empty() {
-        let comma_parts: Vec<&str> = name
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .collect();
-        if comma_parts.len() >= 2 {
-            for p in comma_parts.iter().take(4) {
-                slots.push(((*p).to_string(), String::new()));
-            }
-            total_members = comma_parts.len();
-        } else {
-            let words: Vec<&str> = name.split_whitespace().filter(|w| !w.is_empty()).collect();
-            if words.len() >= 3 {
-                for w in words.iter().take(3) {
-                    slots.push(((*w).to_string(), String::new()));
-                }
-            } else {
-                slots.push((name.to_string(), String::new()));
-                slots.push(("TV".to_string(), String::new()));
-                slots.push(("N".to_string(), String::new()));
-            }
-            total_members = slots.len();
-        }
-    }
-    if total_members < slots.len() {
-        total_members = slots.len();
-    }
-
-    let border_col = Color32::from_rgb(24, 27, 34);
-    let n_slots = slots.len();
-    if n_slots == 2 {
-        let sub_r = (radius * 0.61).max(6.0);
-        let p1 = Pos2::new(center.x + radius - sub_r, center.y - radius + sub_r);
-        let p0 = Pos2::new(center.x - radius + sub_r, center.y + radius - sub_r);
-        for &(pos, idx) in &[(p1, 1usize), (p0, 0usize)] {
-            painter.circle_filled(pos, sub_r + 1.2, border_col);
-            let (ref m_name, ref m_url) = slots[idx];
-            paint_single_circle_avatar(
-                painter,
-                pos,
-                sub_r,
-                m_name,
-                false,
-                if m_url.is_empty() {
-                    None
-                } else {
-                    Some(m_url.as_str())
-                },
-                textures,
-                loading,
-            );
-        }
-    } else if n_slots == 3 && total_members <= 3 {
-        // Zalo PC `zavatar-multi.zavatar-3`: 1 top-center (z=4), 1 bottom-left (z=3), 1 bottom-right (z=2)
-        let sub_r = (radius * 0.56).max(5.5);
-        let p_top = Pos2::new(center.x, center.y - radius + sub_r);
-        let p_bl = Pos2::new(
-            center.x - radius + sub_r + 0.5,
-            center.y + radius - sub_r - 0.5,
-        );
-        let p_br = Pos2::new(
-            center.x + radius - sub_r - 0.5,
-            center.y + radius - sub_r - 0.5,
-        );
-        for &(pos, idx) in &[(p_br, 2usize), (p_bl, 1usize), (p_top, 0usize)] {
-            painter.circle_filled(pos, sub_r + 1.2, border_col);
-            let (ref m_name, ref m_url) = slots[idx];
-            paint_single_circle_avatar(
-                painter,
-                pos,
-                sub_r,
-                m_name,
-                false,
-                if m_url.is_empty() {
-                    None
-                } else {
-                    Some(m_url.as_str())
-                },
-                textures,
-                loading,
-            );
-        }
-    } else {
-        // Zalo PC `zavatar-multi.zavatar-4`: 2x2 grid (with member count badge in bottom-right if total_members >= 4)
-        let sub_r = (radius * 0.52).max(5.0);
-        let p_tl = Pos2::new(center.x - radius + sub_r, center.y - radius + sub_r);
-        let p_tr = Pos2::new(center.x + radius - sub_r, center.y - radius + sub_r);
-        let p_bl = Pos2::new(center.x - radius + sub_r, center.y + radius - sub_r);
-        let p_br = Pos2::new(center.x + radius - sub_r, center.y + radius - sub_r);
-        let show_counter = total_members > 4 || n_slots < 4;
-        if show_counter {
-            painter.circle_filled(p_br, sub_r + 1.2, border_col);
-            painter.circle_filled(p_br, sub_r, Color32::from_rgb(56, 65, 82));
-            let cnt_txt = if total_members > 99 {
-                "99+".to_string()
-            } else {
-                total_members.to_string()
-            };
-            painter.text(
-                p_br,
-                egui::Align2::CENTER_CENTER,
-                cnt_txt,
-                FontId::proportional((sub_r * 0.76).max(8.0)),
-                Color32::from_rgb(218, 226, 240),
-            );
-        } else if let Some((ref m_name, ref m_url)) = slots.get(3) {
-            painter.circle_filled(p_br, sub_r + 1.2, border_col);
-            paint_single_circle_avatar(
-                painter,
-                p_br,
-                sub_r,
-                m_name,
-                false,
-                if m_url.is_empty() {
-                    None
-                } else {
-                    Some(m_url.as_str())
-                },
-                textures,
-                loading,
-            );
-        }
-        for &(pos, idx) in &[(p_bl, 2usize), (p_tr, 1usize), (p_tl, 0usize)] {
-            if let Some((ref m_name, ref m_url)) = slots.get(idx) {
-                painter.circle_filled(pos, sub_r + 1.2, border_col);
-                paint_single_circle_avatar(
-                    painter,
-                    pos,
-                    sub_r,
-                    m_name,
-                    false,
-                    if m_url.is_empty() {
-                        None
-                    } else {
-                        Some(m_url.as_str())
-                    },
-                    textures,
-                    loading,
-                );
-            }
-        }
-    }
 }
 
 pub mod lucide {

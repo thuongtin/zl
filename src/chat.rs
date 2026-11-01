@@ -1322,18 +1322,46 @@ fn pick_str(v: &Value, keys: &[&str]) -> Option<String> {
 }
 
 /// Preserve the protocol's integer clientId without rounding through a float.
+pub fn client_id_wire_value(client_id: &str) -> Result<Value> {
+    anyhow::ensure!(
+        !client_id.is_empty() && client_id.bytes().all(|b| b.is_ascii_digit()),
+        "clientId must contain decimal digits"
+    );
+    let value: u64 = client_id
+        .parse()
+        .map_err(|_| anyhow::anyhow!("clientId exceeds the unsigned 64-bit wire range"))?;
+    anyhow::ensure!(
+        value.to_string() == client_id,
+        "clientId must use canonical decimal digits"
+    );
+    Ok(json!(value))
+}
+fn generated_client_id() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_else(|_| "0".into())
+}
+
+/// Send a 1-1 text message: `POST {domains.chat}/api/message/sms?{common}`
 pub async fn send_message(s: &Session, to_id: &str, text: &str) -> Result<Value> {
+    send_message_with_client_id(s, to_id, text, &generated_client_id()).await
+}
+
+pub async fn send_message_with_client_id(
+    s: &Session,
+    to_id: &str,
+    text: &str,
+    client_id: &str,
+) -> Result<Value> {
+    let client_id = client_id_wire_value(client_id)?;
     if s.login.is_none() {
         anyhow::bail!("chưa đăng nhập");
     }
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
     let body = obj(&[
         ("toid", json!(to_id)),
         ("message", json!(text)),
-        ("clientId", json!(now)),
+        ("clientId", client_id),
         ("imei", json!(s.imei)),
     ]);
     let params = s.encoded_params(&body)?;
@@ -1365,6 +1393,16 @@ pub async fn send_message(s: &Session, to_id: &str, text: &str) -> Result<Value>
 
 /// Send a group text message: `POST {domains.group}/api/group/sendmsg?{common}`
 pub async fn send_group_message(s: &Session, grid: &str, text: &str) -> Result<Value> {
+    send_group_message_with_client_id(s, grid, text, &generated_client_id()).await
+}
+
+pub async fn send_group_message_with_client_id(
+    s: &Session,
+    grid: &str,
+    text: &str,
+    client_id: &str,
+) -> Result<Value> {
+    let client_id = client_id_wire_value(client_id)?;
     if s.login.is_none() {
         anyhow::bail!("chưa đăng nhập");
     }
@@ -1372,14 +1410,10 @@ pub async fn send_group_message(s: &Session, grid: &str, text: &str) -> Result<V
         .trim_start_matches("group_")
         .trim_start_matches('g')
         .trim_start_matches('G');
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
     let body = obj(&[
         ("grid", json!(clean_grid)),
         ("message", json!(text)),
-        ("clientId", json!(now)),
+        ("clientId", client_id),
         ("imei", json!(s.imei)),
         ("visibility", json!(0)),
     ]);
@@ -1415,16 +1449,170 @@ pub fn format_file_size(bytes: u64) -> String {
     }
 }
 
-fn md5_hex_bytes(bytes: &[u8]) -> String {
-    use md5::{Digest, Md5};
-    let mut h = Md5::new();
-    h.update(bytes);
-    let out = h.finalize();
-    out.iter().fold(String::with_capacity(32), |mut acc, b| {
-        use std::fmt::Write;
-        let _ = write!(acc, "{b:02x}");
-        acc
-    })
+pub const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
+pub const SINGLE_SHOT_UPLOAD_LIMIT: u64 = 16 * 1024 * 1024;
+
+struct UploadReader {
+    reader: std::io::BufReader<std::fs::File>,
+    remaining: u64,
+    digest: md5::Md5,
+    expected_digest: String,
+}
+
+/// Bounded file IO runs on the blocking pool, never on the UI executor.
+pub struct AttachmentUploadSource {
+    pub total_size: u64,
+    pub checksum: String,
+    pub dimensions: Option<(u32, u32)>,
+    path: std::path::PathBuf,
+    reader: std::sync::Arc<std::sync::Mutex<UploadReader>>,
+}
+impl AttachmentUploadSource {
+    pub async fn open(path: &std::path::Path) -> Result<Self> {
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || -> Result<Self> {
+            use md5::{Digest, Md5};
+            use std::io::{Read, Seek, SeekFrom};
+            let preflight = std::fs::metadata(&path)?;
+            anyhow::ensure!(preflight.is_file(), "Attachment must be a regular file");
+            let file = std::fs::File::open(&path)?;
+            let metadata = file.metadata()?;
+            anyhow::ensure!(metadata.is_file(), "Attachment must be a regular file");
+            let total_size = metadata.len();
+            anyhow::ensure!(total_size > 0, "Attachment is empty (0 bytes)");
+            let mut reader = std::io::BufReader::with_capacity(UPLOAD_CHUNK_SIZE, file);
+            let mut digest = Md5::new();
+            let mut buffer = vec![0; UPLOAD_CHUNK_SIZE];
+            let mut seen = 0u64;
+            loop {
+                let count = reader.read(&mut buffer)?;
+                if count == 0 {
+                    break;
+                }
+                seen = seen
+                    .checked_add(count as u64)
+                    .ok_or_else(|| anyhow::anyhow!("Attachment size overflow"))?;
+                anyhow::ensure!(seen <= total_size, "Attachment changed during preflight");
+                digest.update(&buffer[..count]);
+            }
+            anyhow::ensure!(seen == total_size, "Attachment changed during preflight");
+            let checksum = format!("{:x}", digest.finalize());
+            reader.seek(SeekFrom::Start(0))?;
+            let dimensions = image::ImageReader::open(&path)
+                .ok()
+                .and_then(|r| r.with_guessed_format().ok())
+                .and_then(|r| r.into_dimensions().ok());
+            Ok(Self {
+                total_size,
+                checksum: checksum.clone(),
+                dimensions,
+                path,
+                reader: std::sync::Arc::new(std::sync::Mutex::new(UploadReader {
+                    reader,
+                    remaining: total_size,
+                    digest: Md5::new(),
+                    expected_digest: checksum,
+                })),
+            })
+        })
+        .await?
+    }
+
+    pub fn total_chunks(&self) -> u64 {
+        self.total_size.div_ceil(UPLOAD_CHUNK_SIZE as u64)
+    }
+
+    /// Existing chunk protocol headers; chunk ordinals are one-based.
+    // The parameters intentionally match the existing upload wire contract.
+    #[allow(clippy::too_many_arguments)]
+    pub fn chunk_parameters(
+        &self,
+        file_name: &str,
+        client_id: u64,
+        imei: &str,
+        target: &str,
+        is_group: bool,
+        is_image: bool,
+        chunk_id: u64,
+    ) -> Result<Value> {
+        anyhow::ensure!(
+            (1..=self.total_chunks()).contains(&chunk_id),
+            "Invalid upload chunk ordinal"
+        );
+        let mut fields = serde_json::Map::new();
+        fields.insert("totalChunk".into(), json!(self.total_chunks()));
+        fields.insert("fileName".into(), json!(file_name));
+        fields.insert("clientId".into(), json!(client_id));
+        fields.insert("totalSize".into(), json!(self.total_size));
+        fields.insert("imei".into(), json!(imei));
+        fields.insert("isE2EE".into(), json!(0));
+        fields.insert("chunkId".into(), json!(chunk_id));
+        if is_image {
+            fields.insert("jxl".into(), json!(0));
+        }
+        fields.insert(if is_group { "grid" } else { "toid" }.into(), json!(target));
+        Ok(Value::Object(fields))
+    }
+
+    pub async fn next_chunk(&self) -> Result<Option<Vec<u8>>> {
+        let state = self.reader.clone();
+        tokio::task::spawn_blocking(move || -> Result<Option<Vec<u8>>> {
+            use md5::Digest;
+            use std::io::Read;
+            let mut state = state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Upload reader lock failed"))?;
+            if state.remaining == 0 {
+                return Ok(None);
+            }
+            let length = state.remaining.min(UPLOAD_CHUNK_SIZE as u64) as usize;
+            let mut bytes = vec![0; length];
+            state.reader.read_exact(&mut bytes)?;
+            state.digest.update(&bytes);
+            state.remaining -= length as u64;
+            if state.remaining == 0 {
+                let mut extra = [0u8; 1];
+                anyhow::ensure!(
+                    state.reader.read(&mut extra)? == 0,
+                    "Attachment grew during upload"
+                );
+                anyhow::ensure!(
+                    format!("{:x}", state.digest.clone().finalize()) == state.expected_digest,
+                    "Attachment changed during upload"
+                );
+            }
+            Ok(Some(bytes))
+        })
+        .await?
+    }
+
+    pub async fn single_shot_bytes(&self) -> Result<Vec<u8>> {
+        anyhow::ensure!(
+            self.total_size <= SINGLE_SHOT_UPLOAD_LIMIT,
+            "Chunk upload failed; single-shot fallback exceeds the 16 MiB bound"
+        );
+        let path = self.path.clone();
+        let expected_size = self.total_size;
+        let expected_digest = self.checksum.clone();
+        tokio::task::spawn_blocking(move || -> Result<Vec<u8>> {
+            use md5::{Digest, Md5};
+            use std::io::Read;
+            let mut file = std::fs::File::open(path)?;
+            let mut bytes = vec![0; expected_size as usize];
+            file.read_exact(&mut bytes)?;
+            let mut extra = [0u8; 1];
+            anyhow::ensure!(
+                file.read(&mut extra)? == 0,
+                "Attachment changed before fallback"
+            );
+            anyhow::ensure!(
+                format!("{:x}", Md5::digest(&bytes)) == expected_digest,
+                "Attachment changed before fallback"
+            );
+            Ok(bytes)
+        })
+        .await?
+    }
 }
 
 /// Upload and send a photo, video, or general file attachment to a 1-1 or group conversation.
@@ -1439,13 +1627,28 @@ pub async fn send_attachment(
     file_path: &std::path::Path,
     caption: &str,
 ) -> Result<(Value, ChatMessage)> {
+    let id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis()
+        .to_string();
+    send_attachment_with_client_id(s, to_id, is_group, file_path, caption, &id).await
+}
+
+pub async fn send_attachment_with_client_id(
+    s: &Session,
+    to_id: &str,
+    is_group: bool,
+    file_path: &std::path::Path,
+    caption: &str,
+    client_id: &str,
+) -> Result<(Value, ChatMessage)> {
+    let client_id = client_id_wire_value(client_id)?
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("Invalid attachment client ID"))?;
     if s.login.is_none() {
         anyhow::bail!("chưa đăng nhập");
     }
-    let file_bytes = std::fs::read(file_path)?;
-    if file_bytes.is_empty() {
-        anyhow::bail!("Tập tin rỗng (0 byte)");
-    }
+    let upload = AttachmentUploadSource::open(file_path).await?;
     let file_name = file_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -1476,19 +1679,11 @@ pub async fn send_attachment(
     } else {
         to_id
     };
-    let client_id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(1793165000000);
-    let total_size = file_bytes.len() as u64;
-    let chunk_size: usize = 1_048_576; // 1 MiB chunks
-    let total_chunks = file_bytes.len().div_ceil(chunk_size).max(1);
+    let total_size = upload.total_size;
     let target_type = if is_group { 11 } else { 2 };
 
     if is_image {
-        let (width, height) = image::load_from_memory(&file_bytes)
-            .map(|img| (img.width(), img.height()))
-            .unwrap_or((800, 600));
+        let (width, height) = upload.dimensions.unwrap_or((800, 600));
         let mime = match ext.as_str() {
             "png" => "image/png",
             "webp" => "image/webp",
@@ -1503,31 +1698,27 @@ pub async fn send_attachment(
         };
 
         let mut last_up_dec = Value::Null;
-        for (idx, chunk) in file_bytes.chunks(chunk_size).enumerate() {
-            let chunk_id = idx + 1;
-            let mut m = serde_json::Map::new();
-            m.insert("totalChunk".into(), json!(total_chunks));
-            m.insert("fileName".into(), json!(file_name));
-            m.insert("clientId".into(), json!(client_id));
-            m.insert("totalSize".into(), json!(total_size));
-            m.insert("imei".into(), json!(s.imei));
-            m.insert("isE2EE".into(), json!(0));
-            m.insert("jxl".into(), json!(0));
-            m.insert("chunkId".into(), json!(chunk_id));
-            if is_group {
-                m.insert("grid".into(), json!(clean_target));
-            } else {
-                m.insert("toid".into(), json!(clean_target));
-            }
-            let params = s.encoded_params(&Value::Object(m))?;
+        let mut idx = 0u64;
+        while let Some(chunk) = upload.next_chunk().await? {
+            let body = upload.chunk_parameters(
+                &file_name,
+                client_id,
+                &s.imei,
+                clean_target,
+                is_group,
+                true,
+                idx + 1,
+            )?;
+            let params = s.encoded_params(&body)?;
             let url = format!(
                 "{file_host}{upload_ep}?{}&params={params}&type={target_type}",
                 s.common_params()
             );
             let up_raw = s
-                .post_multipart(&url, "chunkContent", &file_name, mime, chunk)
+                .post_multipart(&url, "chunkContent", &file_name, mime, &chunk)
                 .await?;
             last_up_dec = s.maybe_decrypt(up_raw, s.session_key_bytes()).await;
+            idx += 1;
         }
 
         let data_node = last_up_dec.get("data").unwrap_or(&last_up_dec);
@@ -1598,6 +1789,7 @@ pub async fn send_attachment(
                 "{file_host}{single_ep}?{}&params={params}&type={target_type}",
                 s.common_params()
             );
+            let file_bytes = upload.single_shot_bytes().await?;
             let r = s
                 .post_multipart(&url, "fileContent", &file_name, mime, &file_bytes)
                 .await?;
@@ -1624,12 +1816,6 @@ pub async fn send_attachment(
         } else {
             file_path.display().to_string()
         };
-        // Pre-populate `stickers_cache/thumb_<md5>.png` with the local image bytes so the GUI
-        // renders the sent photo immediately without an extra network round-trip.
-        let _ = std::fs::create_dir_all("stickers_cache");
-        let cache_key = format!("thumb_{}", crate::crypto::md5_hex(&final_thumb));
-        let _ = std::fs::write(format!("stickers_cache/{cache_key}.png"), &file_bytes);
-
         let msg_id = send_resp
             .get("data")
             .and_then(|d| pick_str(d, &["msgId", "cliMsgId"]))
@@ -1641,12 +1827,15 @@ pub async fn send_attachment(
             format!("[Hình ảnh] {file_name}")
         };
         let cm = ChatMessage {
+            client_message_id: client_id.to_string(),
+            kind: crate::message_model::MessageKind::Photo,
+            delivery: crate::message_model::DeliveryState::ServerAccepted,
             id: msg_id,
             sender: "Tôi".into(),
             text: display_text.clone(),
             time: now_str,
             is_outgoing: true,
-            ts: client_id as i64,
+            ts: (crate::login::unix_now() * 1000),
             link_url: Some(final_url),
             link_title: Some(format!(
                 "{file_name} ({width}×{height} · {})",
@@ -1677,7 +1866,7 @@ pub async fn send_attachment(
         "txt" | "md" | "log" => "text/plain",
         _ => "application/octet-stream",
     };
-    let checksum = md5_hex_bytes(&file_bytes);
+    let checksum = upload.checksum.clone();
     let upload_ep = if is_group {
         "/api/group/asyncfile/upload"
     } else {
@@ -1685,38 +1874,43 @@ pub async fn send_attachment(
     };
 
     let mut last_up_dec = Value::Null;
-    for (idx, chunk) in file_bytes.chunks(chunk_size).enumerate() {
-        let chunk_id = idx + 1;
-        let mut m = serde_json::Map::new();
-        m.insert("totalChunk".into(), json!(total_chunks));
-        m.insert("fileName".into(), json!(file_name));
-        m.insert("clientId".into(), json!(client_id));
-        m.insert("totalSize".into(), json!(total_size));
-        m.insert("imei".into(), json!(s.imei));
-        m.insert("isE2EE".into(), json!(0));
-        m.insert("chunkId".into(), json!(chunk_id));
-        if is_group {
-            m.insert("grid".into(), json!(clean_target));
-        } else {
-            m.insert("toid".into(), json!(clean_target));
-        }
-        let params = s.encoded_params(&Value::Object(m))?;
+    let mut idx = 0u64;
+    while let Some(chunk) = upload.next_chunk().await? {
+        let body = upload.chunk_parameters(
+            &file_name,
+            client_id,
+            &s.imei,
+            clean_target,
+            is_group,
+            false,
+            idx + 1,
+        )?;
+        let params = s.encoded_params(&body)?;
         let url = format!(
             "{file_host}{upload_ep}?{}&params={params}&type={target_type}",
             s.common_params()
         );
         if let Ok(up_raw) = s
-            .post_multipart(&url, "chunkContent", &file_name, mime, chunk)
+            .post_multipart(&url, "chunkContent", &file_name, mime, &chunk)
             .await
         {
             last_up_dec = s.maybe_decrypt(up_raw, s.session_key_bytes()).await;
+            if last_up_dec
+                .get("error_code")
+                .and_then(Value::as_i64)
+                .is_some_and(|code| code != 0)
+            {
+                break;
+            }
+            idx += 1;
         } else {
             break;
         }
     }
 
     let data_node = last_up_dec.get("data").unwrap_or(&last_up_dec);
-    let file_id = pick_str(data_node, &["fileId", "clientFileId"]);
+    let file_id =
+        pick_str(data_node, &["fileId", "clientFileId"]).filter(|_| idx == upload.total_chunks());
     let file_url = pick_str(data_node, &["fileUrl", "url", "normalUrl"]).unwrap_or_default();
 
     let mut send_resp = if let Some(fid) = file_id {
@@ -1785,6 +1979,7 @@ pub async fn send_attachment(
             "{file_host}{share_ep}?{}&params={params}&type={target_type}",
             s.common_params()
         );
+        let file_bytes = upload.single_shot_bytes().await?;
         let r = s
             .post_multipart(&url, "fileContent", &file_name, mime, &file_bytes)
             .await?;
@@ -1820,12 +2015,19 @@ pub async fn send_attachment(
         format!("[{kind_label}] {file_name}")
     };
     let cm = ChatMessage {
+        client_message_id: client_id.to_string(),
+        kind: if is_video {
+            crate::message_model::MessageKind::Video
+        } else {
+            crate::message_model::MessageKind::File
+        },
+        delivery: crate::message_model::DeliveryState::ServerAccepted,
         id: msg_id,
         sender: "Tôi".into(),
         text: display_text,
         time: crate::ui::clock(),
         is_outgoing: true,
-        ts: client_id as i64,
+        ts: (crate::login::unix_now() * 1000),
         link_url: if final_url.is_empty() {
             None
         } else {
@@ -2954,6 +3156,19 @@ pub async fn send_quote_message(
     quoted: &ChatMessage,
     is_group: bool,
 ) -> Result<Value> {
+    send_quote_message_with_client_id(s, to_id, text, quoted, is_group, &generated_client_id())
+        .await
+}
+
+pub async fn send_quote_message_with_client_id(
+    s: &Session,
+    to_id: &str,
+    text: &str,
+    quoted: &ChatMessage,
+    is_group: bool,
+    client_id: &str,
+) -> Result<Value> {
+    let wire_client_id = client_id_wire_value(client_id)?;
     if s.login.is_none() {
         anyhow::bail!("chưa đăng nhập");
     }
@@ -2999,7 +3214,7 @@ pub async fn send_quote_message(
             let body = obj(&[
                 ("grid", json!(clean_grid)),
                 ("message", json!(text)),
-                ("clientId", json!(now)),
+                ("clientId", wire_client_id.clone()),
                 ("language", json!("vi")),
                 ("qmsgOwner", json!(qmsg_owner)),
                 ("qmsgId", json!(qmsg_id_num)),
@@ -3034,7 +3249,7 @@ pub async fn send_quote_message(
             let body = obj(&[
                 ("toid", json!(to_id)),
                 ("message", json!(text)),
-                ("clientId", json!(now)),
+                ("clientId", wire_client_id.clone()),
                 ("qmsgOwner", json!(qmsg_owner)),
                 ("qmsgId", json!(qmsg_id_num)),
                 ("qmsgCliId", json!(qmsg_cli_id)),
@@ -3063,9 +3278,9 @@ pub async fn send_quote_message(
         Ok(r) => Ok(r),
         Err(_) => {
             if is_group {
-                send_group_message(s, to_id, text).await
+                send_group_message_with_client_id(s, to_id, text, client_id).await
             } else {
-                send_message(s, to_id, text).await
+                send_message_with_client_id(s, to_id, text, client_id).await
             }
         }
     }
@@ -6581,6 +6796,472 @@ mod media_metadata_regressions {
 }
 
 /// Result of a preview-only renewal request. Async control delivery stays explicit.
+#[derive(Debug, Clone, Default)]
+pub struct RenewMediaPreview {
+    pub thumbnail_url: Option<String>,
+    pub media_url: Option<String>,
+    pub pending: bool,
+}
+
+fn build_media_preview_renewal(
+    msg: &ChatMessage,
+    to_id: &str,
+    is_group: bool,
+    imei: &str,
+) -> Result<Value> {
+    let source = msg
+        .history_source
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Media renewal requires phone history metadata"))?;
+    let kind = source
+        .get("msgType")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse().ok()));
+    anyhow::ensure!(
+        kind == Some(19),
+        "Preview renewal currently supports phone-history video only"
+    );
+    anyhow::ensure!(
+        msg.text != "[Tin nhắn đã thu hồi]",
+        "Recalled media is not renewable"
+    );
+    let client_id = source
+        .get("clientId")
+        .filter(|v| {
+            v.as_str().is_some_and(|s| !s.is_empty() && s != "0")
+                || v.as_u64().is_some_and(|n| n > 0)
+        })
+        .ok_or_else(|| anyhow::anyhow!("Media renewal requires original clientId"))?;
+    let attachment = source
+        .pointer("/meta/attachsList")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first())
+        .filter(|a| a.is_object())
+        .ok_or_else(|| anyhow::anyhow!("Media renewal requires original attachment"))?;
+    let web_url = |v: Option<&Value>| {
+        v.and_then(Value::as_str)
+            .filter(|s| s.starts_with("https://") || s.starts_with("http://"))
+            .map(str::to_owned)
+    };
+    let video = web_url(attachment.get("href"))
+        .ok_or_else(|| anyhow::anyhow!("Media renewal requires original video URL"))?;
+    let thumb = web_url(attachment.get("thumb"))
+        .ok_or_else(|| anyhow::anyhow!("Media renewal requires original thumbnail URL"))?;
+    let params = match attachment.get("params") {
+        Some(Value::String(s)) => serde_json::from_str::<Value>(s)
+            .map_err(|_| anyhow::anyhow!("Invalid attachment renewal metadata"))?,
+        Some(v) if v.is_object() => v.clone(),
+        _ => json!({}),
+    };
+    // Preserve original attachment and params while adding the proven forward-media fields.
+    let mut content = attachment.clone();
+    content["videoUrl"] = json!(video);
+    content["thumbUrl"] = json!(thumb);
+    content["duration"] = params.get("duration").cloned().unwrap_or(json!(1));
+    content["width"] = params.get("video_width").cloned().unwrap_or(Value::Null);
+    content["height"] = params.get("video_height").cloned().unwrap_or(Value::Null);
+    content["fileSize"] = params
+        .get("fileSize")
+        .or_else(|| params.get("file_size"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    content["properties"] = attachment.get("properties").cloned().unwrap_or(Value::Null);
+    content["title"] = attachment.get("title").cloned().unwrap_or(json!(""));
+    content["renewType"] = json!(0);
+    content["isE2EE"] = json!(0);
+    content["isOriginal"] = json!(1);
+    let target = if is_group {
+        to_id
+            .strip_prefix("group_")
+            .or_else(|| to_id.strip_prefix('g'))
+            .or_else(|| to_id.strip_prefix('G'))
+            .unwrap_or(to_id)
+    } else {
+        to_id
+    };
+    anyhow::ensure!(
+        !target.is_empty() && target.chars().all(|c| c.is_ascii_digit()),
+        "Media renewal requires a numeric conversation ID"
+    );
+    // Original clientId reuse is an explicit integration hypothesis, not proven by static code.
+    Ok(
+        json!({"toId":target,"msgType":5,"msgInfo":serde_json::to_string(&content)?,"clientId":client_id,"imei":imei,"isGroup":if is_group {1} else {0}}),
+    )
+}
+
+fn parse_media_preview_renewal(response: &Value) -> Result<RenewMediaPreview> {
+    let code = response.get("error_code").and_then(Value::as_i64);
+    anyhow::ensure!(
+        code == Some(0),
+        "Media renewal server response was not successful"
+    );
+    let data = response
+        .get("data")
+        .ok_or_else(|| anyhow::anyhow!("Media renewal response has no data"))?;
+    let url = |key: &str| {
+        data.get(key)
+            .and_then(Value::as_str)
+            .filter(|s| s.starts_with("https://") || s.starts_with("http://"))
+            .map(str::to_owned)
+    };
+    let pending = data
+        .get("async")
+        .is_some_and(|v| v == &json!(true) || v.as_i64().is_some_and(|n| n != 0));
+    // A renewType=0 request renews the thumbnail, including the fileUrl response branch.
+    let thumbnail_url = url("normal")
+        .or_else(|| url("thumb"))
+        .or_else(|| url("hd"))
+        .or_else(|| url("fileUrl"));
+    anyhow::ensure!(
+        pending || thumbnail_url.is_some(),
+        "Media renewal returned no usable thumbnail"
+    );
+    Ok(RenewMediaPreview {
+        thumbnail_url,
+        media_url: None,
+        pending,
+    })
+}
+
+/// Renew only a video preview. This does not forward, send, retry, or log payloads.
+/// Caller limits attempts per viewed message and handles pending control delivery.
+pub async fn renew_media_preview(
+    s: &Session,
+    msg: &ChatMessage,
+    to_id: &str,
+    is_group: bool,
+) -> Result<RenewMediaPreview> {
+    anyhow::ensure!(s.login.is_some(), "Media renewal requires login");
+    let body = build_media_preview_renewal(msg, to_id, is_group, &s.imei)?;
+    let params = s
+        .encoded_params(&body)
+        .map_err(|_| anyhow::anyhow!("Media renewal request encoding failed"))?;
+    let url = format!(
+        "{}/api/message/renewlink?{}",
+        s.domains.file.trim_end_matches('/'),
+        s.common_params()
+    );
+    let parsed_url = reqwest::Url::parse(&url)
+        .map_err(|_| anyhow::anyhow!("Invalid media renewal service URL"))?;
+    anyhow::ensure!(
+        parsed_url.scheme() == "https"
+            && parsed_url
+                .host_str()
+                .is_some_and(|host| host.ends_with(".zalo.me") || host.ends_with(".zaloapp.com")),
+        "Invalid media renewal service host"
+    );
+    let operation = async {
+        // Dedicated no-redirect client keeps session credentials on the selected service.
+        let client = reqwest::Client::builder()
+            .cookie_provider(std::sync::Arc::clone(&s.jar))
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(10))
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZaloPC/26.10.11 Chrome/122.0.0.0 Electron/29.0.0 Safari/537.36")
+            .build().map_err(|_| anyhow::anyhow!("Media renewal HTTP client initialization failed"))?;
+        let mut request = client
+            .post(parsed_url)
+            .header("Origin", "https://chat.zalo.me")
+            .header("Referer", "https://chat.zalo.me/")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(format!("params={params}"));
+        if let Some(sek) = s.zpw_sek.as_ref().filter(|sek| !sek.is_empty()) {
+            request = request
+                .header("Cookie", format!("zpw_sek={sek}; _zlang=vi"))
+                .header("zpw_sek", sek);
+        }
+        let mut response = request
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Media renewal transport failed"))?;
+        anyhow::ensure!(
+            response.status().is_success(),
+            "Media renewal HTTP request failed"
+        );
+        const RESPONSE_LIMIT: usize = 1024 * 1024;
+        anyhow::ensure!(
+            response
+                .content_length()
+                .is_none_or(|length| length <= RESPONSE_LIMIT as u64),
+            "Media renewal response exceeded size limit"
+        );
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| anyhow::anyhow!("Media renewal response read failed"))?
+        {
+            anyhow::ensure!(
+                chunk.len() <= RESPONSE_LIMIT.saturating_sub(bytes.len()),
+                "Media renewal response exceeded size limit"
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        let mut response: Value = serde_json::from_slice(&bytes)
+            .map_err(|_| anyhow::anyhow!("Invalid media renewal response JSON"))?;
+        anyhow::ensure!(
+            response.get("error_code").and_then(Value::as_i64) == Some(0),
+            "Media renewal outer response was not successful (code {})",
+            response
+                .get("error_code")
+                .and_then(Value::as_i64)
+                .unwrap_or(-1)
+        );
+        if let Some(encoded) = response.get("data").and_then(Value::as_str) {
+            let decoded = crate::crypto::decode_aes(s.session_key_bytes(), encoded)
+                .map_err(|_| anyhow::anyhow!("Media renewal response decryption failed"))?;
+            response = serde_json::from_str(&decoded)
+                .map_err(|_| anyhow::anyhow!("Invalid decrypted media renewal response"))?;
+        }
+        parse_media_preview_renewal(&response)
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(10), operation)
+        .await
+        .map_err(|_| anyhow::anyhow!("Media renewal timed out"))?
+}
+
+/// Match only a proven renew_link control event for the exact requested thumbnail.
+/// Traversal has a depth and aggregate child budget; unrelated payload URLs are ignored.
+pub fn media_preview_renewal_control(
+    payload: &Value,
+    original_thumb: &str,
+) -> Option<Result<RenewMediaPreview>> {
+    fn match_entry(entry: &Value, original: &str) -> Option<Result<RenewMediaPreview>> {
+        let file_match = entry.get("originalUrl").and_then(Value::as_str) == Some(original);
+        let photo_match = entry.get("img").and_then(Value::as_str) == Some(original);
+        if !file_match && !photo_match {
+            return None;
+        }
+        let code_key = if file_match { "error" } else { "errorCode" };
+        if entry.get(code_key).and_then(Value::as_i64) != Some(0) {
+            return Some(Err(anyhow::anyhow!(
+                "Media renewal control reported failure"
+            )));
+        }
+        let keys: &[&str] = if file_match {
+            &["renewUrl"]
+        } else {
+            &["normal", "hd", "thumb"]
+        };
+        let thumbnail_url = keys
+            .iter()
+            .filter_map(|key| entry.get(*key).and_then(Value::as_str))
+            .find(|url| url.starts_with("https://") || url.starts_with("http://"))
+            .map(str::to_owned);
+        Some(
+            thumbnail_url
+                .map(|url| RenewMediaPreview {
+                    thumbnail_url: Some(url),
+                    media_url: None,
+                    pending: false,
+                })
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Media renewal control returned no usable thumbnail")
+                }),
+        )
+    }
+    fn visit(
+        value: &Value,
+        original: &str,
+        depth: usize,
+        budget: &mut usize,
+    ) -> Option<Result<RenewMediaPreview>> {
+        if depth > 12 || *budget == 0 {
+            return None;
+        }
+        *budget -= 1;
+        if value.get("act").and_then(Value::as_str) == Some("renew_link") {
+            let decoded;
+            let data = match value.get("data") {
+                Some(Value::String(text)) if text.len() <= 1024 * 1024 => {
+                    decoded = serde_json::from_str::<Value>(text).ok()?;
+                    &decoded
+                }
+                Some(data) => data,
+                None => return None,
+            };
+            if let Some(entries) = data.as_array() {
+                for entry in entries {
+                    if *budget == 0 {
+                        return None;
+                    }
+                    *budget -= 1;
+                    if let Some(result) = match_entry(entry, original) {
+                        return Some(result);
+                    }
+                }
+            }
+            return None;
+        }
+        match value {
+            Value::Object(object) => {
+                for child in object.values() {
+                    if *budget == 0 {
+                        break;
+                    }
+                    if let Some(result) = visit(child, original, depth + 1, budget) {
+                        return Some(result);
+                    }
+                }
+            }
+            Value::Array(array) => {
+                for child in array {
+                    if *budget == 0 {
+                        break;
+                    }
+                    if let Some(result) = visit(child, original, depth + 1, budget) {
+                        return Some(result);
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+    if original_thumb.is_empty() {
+        return None;
+    }
+    visit(payload, original_thumb, 0, &mut 2048)
+}
+
+#[cfg(test)]
+mod media_preview_renewal_tests {
+    use super::*;
+    fn fixture() -> ChatMessage {
+        ChatMessage {
+            history_source: Some(
+                json!({"clientId":"123456","msgType":19,"meta":{"attachsList":[{"href":"https://example.invalid/video.mp4?sig=a%2Bb","thumb":"https://example.invalid/poster.jpg?sig=c%2Fd","params":"{\"duration\":7,\"video_width\":640,\"video_height\":360,\"fileSize\":1234,\"video_url_to_renew\":\"synthetic-preserved\"}"}]}}),
+            ),
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn preview_renewal_builder_preserves_metadata_and_uses_proven_video_shape() {
+        let request =
+            build_media_preview_renewal(&fixture(), "g987", true, "synthetic-imei").unwrap();
+        assert_eq!(request["toId"], "987");
+        assert_eq!(request["clientId"], "123456");
+        assert_eq!(request["msgType"], 5);
+        assert_eq!(request["isGroup"], 1);
+        let content: Value = serde_json::from_str(request["msgInfo"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            content["videoUrl"],
+            "https://example.invalid/video.mp4?sig=a%2Bb"
+        );
+        assert_eq!(
+            content["thumbUrl"],
+            "https://example.invalid/poster.jpg?sig=c%2Fd"
+        );
+        assert_eq!(content["renewType"], 0);
+        assert_eq!(content["isOriginal"], 1);
+        assert_eq!(content["isE2EE"], 0);
+        assert_eq!(content["duration"], 7);
+        assert_eq!(content["width"], 640);
+        assert!(content["params"]
+            .as_str()
+            .unwrap()
+            .contains("synthetic-preserved"));
+    }
+    #[test]
+    fn preview_renewal_requires_original_client_id_and_video_source() {
+        let mut message = fixture();
+        message
+            .history_source
+            .as_mut()
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("clientId");
+        assert!(build_media_preview_renewal(&message, "987", false, "synthetic").is_err());
+        let mut message = fixture();
+        message.history_source.as_mut().unwrap()["msgType"] = json!(4);
+        assert!(build_media_preview_renewal(&message, "987", false, "synthetic").is_err());
+    }
+    #[test]
+    fn preview_renewal_distinguishes_sync_pending_and_failure() {
+        let sync = parse_media_preview_renewal(
+            &json!({"error_code":0,"data":{"normal":"https://example.invalid/new.jpg?sig=x%2By"}}),
+        )
+        .unwrap();
+        assert_eq!(
+            sync.thumbnail_url.as_deref(),
+            Some("https://example.invalid/new.jpg?sig=x%2By")
+        );
+        assert!(!sync.pending);
+        assert!(sync.media_url.is_none());
+        let pending =
+            parse_media_preview_renewal(&json!({"error_code":0,"data":{"async":1}})).unwrap();
+        assert!(pending.pending);
+        assert!(pending.thumbnail_url.is_none());
+        assert!(parse_media_preview_renewal(
+            &json!({"error_code":1,"data":{"normal":"https://example.invalid/new.jpg"}})
+        )
+        .is_err());
+        assert!(parse_media_preview_renewal(&json!({"error_code":0,"data":{}})).is_err());
+    }
+    #[test]
+    fn renewal_control_ignores_wrong_original_and_untyped_payloads() {
+        let payload = json!({"events":[{"act":"renew_link","data":[{"originalUrl":"https://example.invalid/other.jpg","renewUrl":"https://example.invalid/new.jpg","error":0}]}]});
+        assert!(
+            media_preview_renewal_control(&payload, "https://example.invalid/old.jpg").is_none()
+        );
+        assert!(media_preview_renewal_control(&json!({"data":[{"img":"https://example.invalid/old.jpg","normal":"https://example.invalid/new.jpg","errorCode":0}]}),"https://example.invalid/old.jpg").is_none());
+        let mut nested = payload;
+        for _ in 0..14 {
+            nested = json!({"nested":nested});
+        }
+        assert!(
+            media_preview_renewal_control(&nested, "https://example.invalid/other.jpg").is_none()
+        );
+    }
+    #[test]
+    fn renewal_control_returns_matched_async_thumbnail_and_preserves_query() {
+        for entry in [
+            json!({"originalUrl":"https://example.invalid/old.jpg","renewUrl":"https://example.invalid/new.jpg?sig=a%2Bb","error":0}),
+            json!({"img":"https://example.invalid/old.jpg","normal":"https://example.invalid/new.jpg?sig=a%2Bb","errorCode":0}),
+        ] {
+            let payload = json!({"events":[{"act":"renew_link","data":[entry]}]});
+            let result = media_preview_renewal_control(&payload, "https://example.invalid/old.jpg")
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                result.thumbnail_url.as_deref(),
+                Some("https://example.invalid/new.jpg?sig=a%2Bb")
+            );
+            assert!(!result.pending);
+            assert!(result.media_url.is_none());
+        }
+    }
+    #[test]
+    fn renewal_control_decodes_string_data_and_surfaces_expired_asset() {
+        let data = json!([{"img":"https://example.invalid/old.jpg","org":"https://example.invalid/old.jpg","errorCode":1001,"destType":1}]);
+        let payload = json!({"act":"renew_link","act_type":1,"data":data.to_string()});
+        assert_eq!(
+            media_preview_renewal_control(&payload, "https://example.invalid/old.jpg")
+                .unwrap()
+                .unwrap_err()
+                .to_string(),
+            "Media renewal control reported failure"
+        );
+        let data = json!([{"img":"https://example.invalid/old.jpg","normal":"https://example.invalid/new.jpg","errorCode":0}]);
+        let payload = json!({"act":"renew_link","data":data.to_string()});
+        assert!(
+            media_preview_renewal_control(&payload, "https://example.invalid/old.jpg")
+                .unwrap()
+                .is_ok()
+        );
+    }
+    #[test]
+    fn renewal_control_surfaces_matching_explicit_error_without_payload() {
+        let payload = json!({"act":"renew_link","data":[{"img":"https://example.invalid/old.jpg","normal":"https://example.invalid/new.jpg","errorCode":7,"private":"synthetic-private"}]});
+        let error = media_preview_renewal_control(&payload, "https://example.invalid/old.jpg")
+            .unwrap()
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "Media renewal control reported failure");
+        assert!(!error.contains("synthetic-private"));
+    }
+}
+
 #[cfg(test)]
 mod parity_regression_tests {
     use super::*;

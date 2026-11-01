@@ -582,7 +582,7 @@ impl Session {
             expired_at: self.expired_at,
         };
         let text = serde_json::to_string_pretty(&saved)?;
-        std::fs::write(path, text)?;
+        crate::data_dir::write_private_atomic(std::path::Path::new(path), text.as_bytes())?;
         Ok(())
     }
 
@@ -1064,6 +1064,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn session_atomic_save_preserves_saved_format_and_restores_fixture() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "ctdozlite-session-test-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("session.json");
+        let mut source = Session::new(false, false, false).unwrap();
+        source.computer_name = "fixture-device".into();
+        source.secret_key = Some(vec![7; 32]);
+        source.session_key = Some("fixture-session-key".into());
+        source.zpw_sek = Some("fixture-auth-token".into());
+        source.save_to_file(path.to_str().unwrap()).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let saved: SavedSession = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(saved.computer_name, "fixture-device");
+        assert_eq!(saved.session_key.as_deref(), Some("fixture-session-key"));
+        let mut restored = Session::new(false, false, false).unwrap();
+        restored.load_from_file(path.to_str().unwrap()).unwrap();
+        assert_eq!(restored.computer_name, source.computer_name);
+        assert_eq!(restored.secret_key, source.secret_key);
+        assert_eq!(restored.session_key, source.session_key);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn session_new_initializes_zpw_sek_and_headers() {
         let s = Session::new(false, false, false).unwrap();
         assert!(s.zpw_sek.is_none());
@@ -1121,16 +1151,18 @@ mod tests {
 
     #[test]
     fn heal_restores_every_verified_domain() {
-        let mut domains = Domains::default();
-        domains.chat = "https://p4-msg-chat.zaloapp.com".into();
-        domains.conversation = "https://p4-ctl-chat.zaloapp.com".into();
-        domains.convers_api = "https://tt-convers-wpa.zaloapp.com/".into();
-        domains.friend = "https://tt-friend-wpa.zaloapp.com".into();
-        domains.profile = "https://tt-profile-wpa.zaloapp.com".into();
-        domains.group = String::new();
-        domains.file = "https://wrong.example/".into();
-        domains.voice_call = String::new();
-        domains.sticker = String::new();
+        let mut domains = Domains {
+            chat: "https://p4-msg-chat.zaloapp.com".into(),
+            conversation: "https://p4-ctl-chat.zaloapp.com".into(),
+            convers_api: "https://tt-convers-wpa.zaloapp.com/".into(),
+            friend: "https://tt-friend-wpa.zaloapp.com".into(),
+            profile: "https://tt-profile-wpa.zaloapp.com".into(),
+            group: String::new(),
+            file: "https://wrong.example/".into(),
+            voice_call: String::new(),
+            sticker: String::new(),
+            ..Default::default()
+        };
 
         domains.heal_from_verified();
 
@@ -1155,11 +1187,13 @@ mod tests {
 
     #[test]
     fn heal_leaves_server_owned_endpoints_untouched() {
-        let mut domains = Domains::default();
-        domains.lp_chat = "https://p9-msg-chat.zaloapp.com".into();
-        domains.lp_control = "https://p9-ctl-chat.zaloapp.com".into();
-        domains.cloud_msg = "https://tt-group-cm.example.test".into();
-        domains.ws = vec!["wss://ws99-msg.chat.zalo.me".into()];
+        let mut domains = Domains {
+            lp_chat: "https://p9-msg-chat.zaloapp.com".into(),
+            lp_control: "https://p9-ctl-chat.zaloapp.com".into(),
+            cloud_msg: "https://tt-group-cm.example.test".into(),
+            ws: vec!["wss://ws99-msg.chat.zalo.me".into()],
+            ..Default::default()
+        };
 
         domains.heal_from_verified();
 

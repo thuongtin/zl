@@ -148,6 +148,29 @@ fn create_private_file(parent: &Path, prefix: &str) -> std::io::Result<(PathBuf,
     ))
 }
 
+/// Replace a session only after the complete private temporary file is flushed.
+pub fn write_private_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let (temporary, mut file) = create_private_file(parent, ".session-tmp")
+        .with_context(|| format!("Cannot create temporary session in {}", parent.display()))?;
+    let result = (|| -> Result<()> {
+        file.write_all(contents).context("Cannot write session")?;
+        file.sync_all().context("Cannot flush session")?;
+        drop(file);
+        std::fs::rename(&temporary, path)
+            .with_context(|| format!("Cannot replace session {}", path.display()))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,5 +318,29 @@ mod tests {
             assert_eq!(path, cwd.join("-d"));
             assert!(private);
         }
+    }
+    #[test]
+    fn atomic_write_is_private_and_failed_replace_retains_destination() {
+        let root = fixture();
+        let path = root.join("session.json");
+        write_private_atomic(&path, b"first fixture").unwrap();
+        write_private_atomic(&path, b"second fixture").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second fixture");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        let occupied = root.join("occupied");
+        std::fs::create_dir(&occupied).unwrap();
+        std::fs::write(occupied.join("keep"), b"retained").unwrap();
+        assert!(write_private_atomic(&occupied, b"replacement").is_err());
+        assert_eq!(std::fs::read(occupied.join("keep")).unwrap(), b"retained");
+        assert!(write_private_atomic(&root.join("missing/session.json"), b"fixture").is_err());
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

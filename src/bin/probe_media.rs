@@ -54,7 +54,10 @@ fn summarize(m: &Value) {
     let msg_type = m["msgType"].as_i64().unwrap_or(-1);
     let msg_id = m["msgId"].as_str().unwrap_or("?");
     let from = m["uidFrom"].as_str().unwrap_or("?");
-    let ts = m["ts"].as_str().or_else(|| m["sendDttm"].as_str()).unwrap_or("?");
+    let ts = m["ts"]
+        .as_str()
+        .or_else(|| m["sendDttm"].as_str())
+        .unwrap_or("?");
 
     // `message` is usually a JSON-encoded string.
     let content = match &m["message"] {
@@ -63,7 +66,15 @@ fn summarize(m: &Value) {
     };
 
     let mut media: Vec<String> = Vec::new();
-    for key in ["href", "thumb", "thumbUrl", "normalUrl", "oriUrl", "hdUrl", "rawUrl"] {
+    for key in [
+        "href",
+        "thumb",
+        "thumbUrl",
+        "normalUrl",
+        "oriUrl",
+        "hdUrl",
+        "rawUrl",
+    ] {
         if let Some(u) = content[key].as_str() {
             if !u.is_empty() {
                 media.push(format!("{key}={}", truncate(u, 110)));
@@ -71,7 +82,10 @@ fn summarize(m: &Value) {
         }
     }
     if content.get("params").is_some() {
-        media.push(format!("params={}", truncate(&content["params"].to_string(), 90)));
+        media.push(format!(
+            "params={}",
+            truncate(&content["params"].to_string(), 90)
+        ));
     }
 
     let text = content["title"]
@@ -92,7 +106,10 @@ fn summarize(m: &Value) {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    let clean: String = s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let clean: String = s
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
     if clean.chars().count() <= n {
         clean
     } else {

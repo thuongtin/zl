@@ -109,10 +109,9 @@ impl MessageStore {
     /// Delete a message from local SQLite store when user selects "Xóa chỉ ở phía tôi".
     pub fn delete_message(&mut self, thread_id: &str, msg_id: &str, ts: i64) -> Result<()> {
         if !msg_id.is_empty() {
-            let _ = self.conn.execute(
-                "DELETE FROM messages WHERE msg_id = ?1",
-                params![msg_id],
-            );
+            let _ = self
+                .conn
+                .execute("DELETE FROM messages WHERE msg_id = ?1", params![msg_id]);
         }
         if ts > 0 && !thread_id.is_empty() {
             let _ = self.conn.execute(
@@ -204,7 +203,11 @@ impl MessageStore {
 
     /// Hydrate `threads` with persisted threads and message history from SQLite.
     /// Returns the total number of messages loaded into `threads`.
-    pub fn hydrate_threads(&self, threads: &mut Vec<Thread>, limit_per_thread: usize) -> Result<usize> {
+    pub fn hydrate_threads(
+        &self,
+        threads: &mut Vec<Thread>,
+        limit_per_thread: usize,
+    ) -> Result<usize> {
         crate::chat::deduplicate_threads(threads, None);
 
         let stored_threads = self.all_threads().unwrap_or_default();
@@ -213,9 +216,7 @@ impl MessageStore {
                 continue;
             }
             if let Some(existing) = threads.iter_mut().find(|t| t.id == st.thread_id) {
-                if crate::chat::is_generic_thread_name(&existing.name)
-                    && !st.name.is_empty()
-                {
+                if crate::chat::is_generic_thread_name(&existing.name) && !st.name.is_empty() {
                     existing.name = st.name;
                 }
                 existing.is_group = existing.is_group || st.is_group;
@@ -261,7 +262,9 @@ impl MessageStore {
         // around them: in autocommit every SELECT takes and drops the file lock, ~50 µs on
         // Windows, which made 62k lookups cost 3 s.
         let tx = self.conn.unchecked_transaction()?;
-        let mut owner_of = self.conn.prepare("SELECT thread_id FROM messages WHERE msg_id = ?1")?;
+        let mut owner_of = self
+            .conn
+            .prepare("SELECT thread_id FROM messages WHERE msg_id = ?1")?;
 
         let mut loaded_count = 0;
         for t in threads.iter_mut() {
@@ -311,10 +314,7 @@ impl MessageStore {
                             .get("cateId")
                             .or_else(|| val.get("catId"))
                             .and_then(|v| v.as_u64());
-                        sticker_type = val
-                            .get("type")
-                            .and_then(|v| v.as_u64())
-                            .map(|n| n as u32);
+                        sticker_type = val.get("type").and_then(|v| v.as_u64()).map(|n| n as u32);
                         reply_to_id = val
                             .get("reply_to_id")
                             .and_then(|v| v.as_str())
@@ -393,7 +393,10 @@ impl MessageStore {
                     (!existing.id.is_empty() && existing.id == cm.id)
                         || (existing.text == cm.text
                             && existing.is_outgoing == cm.is_outgoing
-                            && (existing.ts == cm.ts || (existing.ts != 0 && cm.ts != 0 && (existing.ts - cm.ts).abs() < 5000)))
+                            && (existing.ts == cm.ts
+                                || (existing.ts != 0
+                                    && cm.ts != 0
+                                    && (existing.ts - cm.ts).abs() < 5000)))
                 }) {
                     if existing.sticker_id.is_none() && cm.sticker_id.is_some() {
                         existing.sticker_id = cm.sticker_id;
@@ -500,7 +503,11 @@ impl From<&ChatMessage> for StoredMessage {
                 format!("msg_{}", m.ts)
             },
             thread_id: String::new(),
-            sender_id: if m.is_outgoing { "0".into() } else { m.sender.clone() },
+            sender_id: if m.is_outgoing {
+                "0".into()
+            } else {
+                m.sender.clone()
+            },
             sender_name: m.sender.clone(),
             text: m.text.clone(),
             msg_type,
@@ -671,7 +678,10 @@ mod tests {
 
         // A limit keeps the *newest* rows, still returned oldest-first.
         let newest = store.messages_for(thread_id, 2).unwrap();
-        assert_eq!(newest.iter().map(|m| m.ts).collect::<Vec<_>>(), vec![200, 300]);
+        assert_eq!(
+            newest.iter().map(|m| m.ts).collect::<Vec<_>>(),
+            vec![200, 300]
+        );
     }
 
     #[test]

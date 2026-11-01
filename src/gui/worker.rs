@@ -238,15 +238,20 @@ async fn prefetch_missing_sticker_thumbnails(
     futures_util::future::join_all(futs).await;
 }
 
-pub(super) fn spawn_session_worker(session: Session, gui_tx: Sender<GuiEvent>, egui_ctx: egui::Context) {
+pub(super) fn spawn_session_worker(
+    session: Session,
+    gui_tx: Sender<GuiEvent>,
+    egui_ctx: egui::Context,
+) {
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<WorkerCmd>();
     let _ = WORKER_TX.set(cmd_tx);
 
     let session = std::sync::Arc::new(tokio::sync::Mutex::new(session));
     let poll_state =
         std::sync::Arc::new(tokio::sync::Mutex::new(crate::chat::PollState::default()));
-    let ctrl_poll_state =
-        std::sync::Arc::new(tokio::sync::Mutex::new(crate::call::CtrlPollState::default()));
+    let ctrl_poll_state = std::sync::Arc::new(tokio::sync::Mutex::new(
+        crate::call::CtrlPollState::default(),
+    ));
 
     std::thread::Builder::new()
         .name("zalo-worker".into())
@@ -2141,8 +2146,7 @@ async fn fetch_github_latest_release() -> Result<UpdateCheckResult, String> {
     }
 
     if rel_json.is_none() {
-        let list_url =
-            format!("https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=5");
+        let list_url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=5");
         if let Ok(resp) = client
             .get(&list_url)
             .header("Accept", "application/vnd.github+json")
@@ -2267,7 +2271,8 @@ async fn fetch_github_latest_release() -> Result<UpdateCheckResult, String> {
                 sha256_url = Some(dl.to_string());
                 continue;
             }
-            if name.is_empty() || dl.is_empty() || name.ends_with(".txt") || name.ends_with(".json") {
+            if name.is_empty() || dl.is_empty() || name.ends_with(".txt") || name.ends_with(".json")
+            {
                 continue;
             }
             let n_low = name.to_lowercase();
@@ -2432,10 +2437,9 @@ async fn apply_github_release_update(
     }
 
     let name_low = asset_name.to_lowercase();
-    let is_portable_bin = (cfg!(target_os = "windows")
-        && name_low.ends_with(".exe")
-        && !name_low.contains("setup"))
-        || (cfg!(target_os = "linux") && name_low.ends_with(".appimage"));
+    let is_portable_bin =
+        (cfg!(target_os = "windows") && name_low.ends_with(".exe") && !name_low.contains("setup"))
+            || (cfg!(target_os = "linux") && name_low.ends_with(".appimage"));
 
     if cfg!(target_os = "windows") && name_low.ends_with(".exe") {
         if bytes.get(0..2) != Some(b"MZ") {
@@ -2451,10 +2455,8 @@ async fn apply_github_release_update(
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(
-                        &new_path,
-                        std::fs::Permissions::from_mode(0o755),
-                    );
+                    let _ =
+                        std::fs::set_permissions(&new_path, std::fs::Permissions::from_mode(0o755));
                 }
                 let _ = std::fs::remove_file(&old_path);
                 if std::fs::rename(&exe_path, &old_path).is_ok() {
@@ -2496,8 +2498,9 @@ async fn apply_github_release_update(
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        let _ = std::process::Command::new("xdg-open").arg(&dest_path).spawn();
+        let _ = std::process::Command::new("xdg-open")
+            .arg(&dest_path)
+            .spawn();
     }
     Ok(false)
 }
-

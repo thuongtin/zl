@@ -90,7 +90,10 @@ fn main() -> Result<()> {
     let filter = args.get(3).map(String::as_str).unwrap_or("");
 
     let keys = candidate_keys(session_path)?;
-    println!("keys: {:?}", keys.iter().map(|(l, k)| (l, k.len())).collect::<Vec<_>>());
+    println!(
+        "keys: {:?}",
+        keys.iter().map(|(l, k)| (l, k.len())).collect::<Vec<_>>()
+    );
 
     let text = std::fs::read_to_string(capture_path)?;
     for line in text.lines() {
@@ -123,7 +126,10 @@ fn main() -> Result<()> {
             }
         }
         if !decoded {
-            println!("(could not decrypt with {:?})", keys.iter().map(|(l, _)| l).collect::<Vec<_>>());
+            println!(
+                "(could not decrypt with {:?})",
+                keys.iter().map(|(l, _)| l).collect::<Vec<_>>()
+            );
         }
     }
     Ok(())

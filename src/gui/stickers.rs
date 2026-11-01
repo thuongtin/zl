@@ -73,68 +73,340 @@ pub(super) fn builtin_pack_stickers(cate_id: u64) -> Option<Vec<crate::chat::Sti
 }
 
 pub(super) const POPULAR_STICKERS: &[PresetSticker] = &[
-    PresetSticker { sticker_id: 18009, cate_id: 10130, sticker_type: 7, label: "Xin chào" },
-    PresetSticker { sticker_id: 21458, cate_id: 10302, sticker_type: 7, label: "Vẫy tay" },
-    PresetSticker { sticker_id: 21459, cate_id: 10302, sticker_type: 7, label: "Vui vẻ" },
-    PresetSticker { sticker_id: 21460, cate_id: 10302, sticker_type: 7, label: "Thả tim" },
-    PresetSticker { sticker_id: 21461, cate_id: 10302, sticker_type: 7, label: "Cười lớn" },
-    PresetSticker { sticker_id: 21462, cate_id: 10302, sticker_type: 7, label: "Hóng" },
-    PresetSticker { sticker_id: 21463, cate_id: 10302, sticker_type: 7, label: "Ngạc nhiên" },
-    PresetSticker { sticker_id: 21464, cate_id: 10302, sticker_type: 7, label: "Cảm ơn" },
-    PresetSticker { sticker_id: 16713, cate_id: 10047, sticker_type: 7, label: "Hello" },
-    PresetSticker { sticker_id: 18869, cate_id: 10177, sticker_type: 7, label: "OK" },
-    PresetSticker { sticker_id: 19773, cate_id: 10233, sticker_type: 7, label: "Tuyệt" },
-    PresetSticker { sticker_id: 17751, cate_id: 10117, sticker_type: 7, label: "Yêu thương" },
-    PresetSticker { sticker_id: 18910, cate_id: 10183, sticker_type: 7, label: "Haha" },
-    PresetSticker { sticker_id: 20695, cate_id: 10275, sticker_type: 7, label: "Chơi game" },
-    PresetSticker { sticker_id: 19949, cate_id: 10242, sticker_type: 7, label: "Mèo con" },
-    PresetSticker { sticker_id: 394, cate_id: 14, sticker_type: 7, label: "Chào bạn" },
-    PresetSticker { sticker_id: 98930, cate_id: 61900, sticker_type: 7, label: "Zapy Xin chào" },
-    PresetSticker { sticker_id: 101001, cate_id: 12815, sticker_type: 7, label: "Bé Hai #1" },
-    PresetSticker { sticker_id: 99978, cate_id: 12748, sticker_type: 7, label: "Cò Lõ #1" },
-    PresetSticker { sticker_id: 99278, cate_id: 12705, sticker_type: 7, label: "Mèo Meon #1" },
-    PresetSticker { sticker_id: 99486, cate_id: 12718, sticker_type: 7, label: "Gấu Cay #1" },
-    PresetSticker { sticker_id: 47614, cate_id: 12045, sticker_type: 7, label: "Zameo #1" },
-    PresetSticker { sticker_id: 34107, cate_id: 11150, sticker_type: 7, label: "Bé Dúi #1" },
-    PresetSticker { sticker_id: 18974, cate_id: 10186, sticker_type: 7, label: "Đậu Đỏ #1" },
+    PresetSticker {
+        sticker_id: 18009,
+        cate_id: 10130,
+        sticker_type: 7,
+        label: "Xin chào",
+    },
+    PresetSticker {
+        sticker_id: 21458,
+        cate_id: 10302,
+        sticker_type: 7,
+        label: "Vẫy tay",
+    },
+    PresetSticker {
+        sticker_id: 21459,
+        cate_id: 10302,
+        sticker_type: 7,
+        label: "Vui vẻ",
+    },
+    PresetSticker {
+        sticker_id: 21460,
+        cate_id: 10302,
+        sticker_type: 7,
+        label: "Thả tim",
+    },
+    PresetSticker {
+        sticker_id: 21461,
+        cate_id: 10302,
+        sticker_type: 7,
+        label: "Cười lớn",
+    },
+    PresetSticker {
+        sticker_id: 21462,
+        cate_id: 10302,
+        sticker_type: 7,
+        label: "Hóng",
+    },
+    PresetSticker {
+        sticker_id: 21463,
+        cate_id: 10302,
+        sticker_type: 7,
+        label: "Ngạc nhiên",
+    },
+    PresetSticker {
+        sticker_id: 21464,
+        cate_id: 10302,
+        sticker_type: 7,
+        label: "Cảm ơn",
+    },
+    PresetSticker {
+        sticker_id: 16713,
+        cate_id: 10047,
+        sticker_type: 7,
+        label: "Hello",
+    },
+    PresetSticker {
+        sticker_id: 18869,
+        cate_id: 10177,
+        sticker_type: 7,
+        label: "OK",
+    },
+    PresetSticker {
+        sticker_id: 19773,
+        cate_id: 10233,
+        sticker_type: 7,
+        label: "Tuyệt",
+    },
+    PresetSticker {
+        sticker_id: 17751,
+        cate_id: 10117,
+        sticker_type: 7,
+        label: "Yêu thương",
+    },
+    PresetSticker {
+        sticker_id: 18910,
+        cate_id: 10183,
+        sticker_type: 7,
+        label: "Haha",
+    },
+    PresetSticker {
+        sticker_id: 20695,
+        cate_id: 10275,
+        sticker_type: 7,
+        label: "Chơi game",
+    },
+    PresetSticker {
+        sticker_id: 19949,
+        cate_id: 10242,
+        sticker_type: 7,
+        label: "Mèo con",
+    },
+    PresetSticker {
+        sticker_id: 394,
+        cate_id: 14,
+        sticker_type: 7,
+        label: "Chào bạn",
+    },
+    PresetSticker {
+        sticker_id: 98930,
+        cate_id: 61900,
+        sticker_type: 7,
+        label: "Zapy Xin chào",
+    },
+    PresetSticker {
+        sticker_id: 101001,
+        cate_id: 12815,
+        sticker_type: 7,
+        label: "Bé Hai #1",
+    },
+    PresetSticker {
+        sticker_id: 99978,
+        cate_id: 12748,
+        sticker_type: 7,
+        label: "Cò Lõ #1",
+    },
+    PresetSticker {
+        sticker_id: 99278,
+        cate_id: 12705,
+        sticker_type: 7,
+        label: "Mèo Meon #1",
+    },
+    PresetSticker {
+        sticker_id: 99486,
+        cate_id: 12718,
+        sticker_type: 7,
+        label: "Gấu Cay #1",
+    },
+    PresetSticker {
+        sticker_id: 47614,
+        cate_id: 12045,
+        sticker_type: 7,
+        label: "Zameo #1",
+    },
+    PresetSticker {
+        sticker_id: 34107,
+        cate_id: 11150,
+        sticker_type: 7,
+        label: "Bé Dúi #1",
+    },
+    PresetSticker {
+        sticker_id: 18974,
+        cate_id: 10186,
+        sticker_type: 7,
+        label: "Đậu Đỏ #1",
+    },
 ];
 
 pub(super) const ONION_STICKERS: &[PresetSticker] = &[
-    PresetSticker { sticker_id: 1, cate_id: 0, sticker_type: 7, label: "Củ hành #1" },
-    PresetSticker { sticker_id: 2, cate_id: 0, sticker_type: 7, label: "Củ hành #2" },
-    PresetSticker { sticker_id: 3, cate_id: 0, sticker_type: 7, label: "Củ hành #3" },
-    PresetSticker { sticker_id: 4, cate_id: 0, sticker_type: 7, label: "Củ hành #4" },
-    PresetSticker { sticker_id: 5, cate_id: 0, sticker_type: 7, label: "Củ hành #5" },
-    PresetSticker { sticker_id: 6, cate_id: 0, sticker_type: 7, label: "Củ hành #6" },
-    PresetSticker { sticker_id: 7, cate_id: 0, sticker_type: 7, label: "Củ hành #7" },
-    PresetSticker { sticker_id: 8, cate_id: 0, sticker_type: 7, label: "Củ hành #8" },
-    PresetSticker { sticker_id: 9, cate_id: 0, sticker_type: 7, label: "Củ hành #9" },
-    PresetSticker { sticker_id: 10, cate_id: 0, sticker_type: 7, label: "Củ hành #10" },
-    PresetSticker { sticker_id: 11, cate_id: 0, sticker_type: 7, label: "Củ hành #11" },
-    PresetSticker { sticker_id: 12, cate_id: 0, sticker_type: 7, label: "Củ hành #12" },
-    PresetSticker { sticker_id: 13, cate_id: 0, sticker_type: 7, label: "Củ hành #13" },
-    PresetSticker { sticker_id: 14, cate_id: 0, sticker_type: 7, label: "Củ hành #14" },
-    PresetSticker { sticker_id: 15, cate_id: 0, sticker_type: 7, label: "Củ hành #15" },
-    PresetSticker { sticker_id: 16, cate_id: 0, sticker_type: 7, label: "Củ hành #16" },
-    PresetSticker { sticker_id: 17, cate_id: 0, sticker_type: 7, label: "Củ hành #17" },
-    PresetSticker { sticker_id: 18, cate_id: 0, sticker_type: 7, label: "Củ hành #18" },
-    PresetSticker { sticker_id: 19, cate_id: 0, sticker_type: 7, label: "Củ hành #19" },
-    PresetSticker { sticker_id: 20, cate_id: 0, sticker_type: 7, label: "Củ hành #20" },
-    PresetSticker { sticker_id: 21, cate_id: 0, sticker_type: 7, label: "Củ hành #21" },
-    PresetSticker { sticker_id: 22, cate_id: 0, sticker_type: 7, label: "Củ hành #22" },
-    PresetSticker { sticker_id: 23, cate_id: 0, sticker_type: 7, label: "Củ hành #23" },
-    PresetSticker { sticker_id: 24, cate_id: 0, sticker_type: 7, label: "Củ hành #24" },
-    PresetSticker { sticker_id: 25, cate_id: 0, sticker_type: 7, label: "Củ hành #25" },
-    PresetSticker { sticker_id: 26, cate_id: 0, sticker_type: 7, label: "Củ hành #26" },
-    PresetSticker { sticker_id: 27, cate_id: 0, sticker_type: 7, label: "Củ hành #27" },
-    PresetSticker { sticker_id: 28, cate_id: 0, sticker_type: 7, label: "Củ hành #28" },
-    PresetSticker { sticker_id: 29, cate_id: 0, sticker_type: 7, label: "Củ hành #29" },
-    PresetSticker { sticker_id: 30, cate_id: 0, sticker_type: 7, label: "Củ hành #30" },
+    PresetSticker {
+        sticker_id: 1,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #1",
+    },
+    PresetSticker {
+        sticker_id: 2,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #2",
+    },
+    PresetSticker {
+        sticker_id: 3,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #3",
+    },
+    PresetSticker {
+        sticker_id: 4,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #4",
+    },
+    PresetSticker {
+        sticker_id: 5,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #5",
+    },
+    PresetSticker {
+        sticker_id: 6,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #6",
+    },
+    PresetSticker {
+        sticker_id: 7,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #7",
+    },
+    PresetSticker {
+        sticker_id: 8,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #8",
+    },
+    PresetSticker {
+        sticker_id: 9,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #9",
+    },
+    PresetSticker {
+        sticker_id: 10,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #10",
+    },
+    PresetSticker {
+        sticker_id: 11,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #11",
+    },
+    PresetSticker {
+        sticker_id: 12,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #12",
+    },
+    PresetSticker {
+        sticker_id: 13,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #13",
+    },
+    PresetSticker {
+        sticker_id: 14,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #14",
+    },
+    PresetSticker {
+        sticker_id: 15,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #15",
+    },
+    PresetSticker {
+        sticker_id: 16,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #16",
+    },
+    PresetSticker {
+        sticker_id: 17,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #17",
+    },
+    PresetSticker {
+        sticker_id: 18,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #18",
+    },
+    PresetSticker {
+        sticker_id: 19,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #19",
+    },
+    PresetSticker {
+        sticker_id: 20,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #20",
+    },
+    PresetSticker {
+        sticker_id: 21,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #21",
+    },
+    PresetSticker {
+        sticker_id: 22,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #22",
+    },
+    PresetSticker {
+        sticker_id: 23,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #23",
+    },
+    PresetSticker {
+        sticker_id: 24,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #24",
+    },
+    PresetSticker {
+        sticker_id: 25,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #25",
+    },
+    PresetSticker {
+        sticker_id: 26,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #26",
+    },
+    PresetSticker {
+        sticker_id: 27,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #27",
+    },
+    PresetSticker {
+        sticker_id: 28,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #28",
+    },
+    PresetSticker {
+        sticker_id: 29,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #29",
+    },
+    PresetSticker {
+        sticker_id: 30,
+        cate_id: 0,
+        sticker_type: 7,
+        label: "Củ hành #30",
+    },
 ];
 
 /// Instant contextual sticker suggestions mapped from Vietnamese/English keywords, emoticons, and emojis.
 /// Returns `(canonical_api_keyword, instant_preset_stickers)`.
-pub(super) fn instant_contextual_stickers(raw_input: &str) -> Option<(&'static str, Vec<crate::chat::StickerItem>)> {
+pub(super) fn instant_contextual_stickers(
+    raw_input: &str,
+) -> Option<(&'static str, Vec<crate::chat::StickerItem>)> {
     let trimmed = raw_input.trim();
     if trimmed.is_empty() || trimmed.contains('\n') {
         return None;
@@ -162,7 +434,9 @@ pub(super) fn instant_contextual_stickers(raw_input: &str) -> Option<(&'static s
     None
 }
 
-pub(super) fn instant_contextual_stickers_exact(trimmed: &str) -> Option<(&'static str, Vec<crate::chat::StickerItem>)> {
+pub(super) fn instant_contextual_stickers_exact(
+    trimmed: &str,
+) -> Option<(&'static str, Vec<crate::chat::StickerItem>)> {
     let low = trimmed.to_lowercase();
     let folded = fold_vn_search(trimmed);
     let has_vn_diacritics = low != folded;
@@ -172,226 +446,81 @@ pub(super) fn instant_contextual_stickers_exact(trimmed: &str) -> Option<(&'stat
     //   Vietnamese phrases (`low`) so unfinished Telex states like `"buôn"` (before pressing `f` -> `"buồn"`)
     //   never prematurely trigger `"buon"`.
     // - If input is plain ASCII (`has_vn_diacritics == false`), match unaccented ASCII keywords (`low`).
-    let (api_kw, label_prefix, pairs): (&'static str, &'static str, &[(u64, u64)]) = match low.as_str() {
-        "🙂" | "😊" | "☺️" | "🙃" | ":)" | ":-)" | ":3" | "^^" | ":>" => (
-            ":)",
-            "Mỉm cười",
-            &[
-                (12685, 98981),
-                (12815, 101002),
-                (12748, 99980),
-                (12705, 99279),
-                (11978, 46575),
-                (11954, 46182),
-                (11934, 45835),
-                (11870, 44809),
-                (11807, 43863),
-                (11659, 41251),
-                (11150, 34827),
-                (10302, 21459),
-            ],
-        ),
-        "🙁" | "☹️" | "☹" | "😢" | "😭" | "😞" | "😔" | "🥺" | "🥹" | ":(" | ":((" | ":-(( "
-        | ":-(" | "t_t" => (
-            "buon",
-            "Buồn",
-            &[
-                (12815, 101012),
-                (12748, 99985),
-                (12556, 50348),
-                (12334, 49778),
-                (12238, 49500),
-                (12013, 47156),
-                (11978, 46576),
-                (11955, 46210),
-                (11938, 45902),
-                (11917, 45594),
-                (10302, 21456),
-            ],
-        ),
-        "😂" | "🤣" | "😆" | "😄" | "😁" | "=))" | "=)))" | ":))" | ":)))" | ":v" => (
-            "haha",
-            "Haha",
-            &[
-                (12686, 99001),
-                (12685, 98981),
-                (12334, 49787),
-                (12244, 49561),
-                (12059, 47856),
-                (12048, 47668),
-                (12045, 47617),
-                (12022, 47275),
-                (12017, 47228),
-                (12013, 47154),
-                (10302, 21461),
-                (10183, 18910),
-            ],
-        ),
-        "❤️" | "❤" | "💕" | "💖" | "💘" | "💗" | "💓" | "😍" | "🥰" | "😘" | "<3" | ":*"
-        | ":-*" => (
-            "yêu",
-            "Yêu thương",
-            &[
-                (12556, 50344),
-                (12334, 49774),
-                (12017, 47227),
-                (12013, 47147),
-                (11986, 46709),
-                (10939, 30474),
-                (10751, 27695),
-                (10302, 21460),
-                (10117, 17751),
-            ],
-        ),
-        "👍" | "👌" | "✅" | "💯" | "🤝" | "/-strong" => (
-            "ok",
-            "OK",
-            &[
-                (61900, 98936),
-                (12778, 100425),
-                (12748, 99981),
-                (12676, 50745),
-                (12646, 50589),
-                (12556, 50345),
-                (12334, 49789),
-                (12238, 49497),
-                (10233, 19773),
-                (10177, 18869),
-            ],
-        ),
-        "😠" | "😡" | "🤬" | "😤" | ":-h" => (
-            "giận",
-            "Giận",
-            &[
-                (61900, 98933),
-                (12686, 98993),
-                (12052, 47748),
-                (11917, 45599),
-                (11906, 45422),
-                (11454, 38359),
-            ],
-        ),
-        "..." | "...." | "....." | "......" | "-_-" | "==" | "=.=" | "😐" | "😑" | "🙄"
-        | "😒" => (
-            "....",
-            "Cạn lời",
-            &[
-                (12740, 99857),
-                (12334, 49777),
-                (12013, 47155),
-                (11917, 45601),
-                (11788, 43550),
-                (10398, 23044),
-                (10313, 21646),
-            ],
-        ),
-        "?" | "??" | "???" | "🤔" | "😮" | "😲" | "😯" | "@@" | "👀" => (
-            "??",
-            "Thắc mắc",
-            &[
-                (12748, 99990),
-                (12738, 99830),
-                (12686, 98999),
-                (12676, 50751),
-                (12616, 50519),
-                (12334, 49780),
-                (12238, 49515),
-                (12013, 47158),
-                (10302, 21463),
-            ],
-        ),
-        "😴" | "😪" | "🥱" | "💤" => (
-            "ngu ngon",
-            "Ngủ ngon",
-            &[
-                (12778, 100431),
-                (11986, 46713),
-                (11962, 46332),
-                (11956, 46226),
-                (11949, 46092),
-                (11819, 44048),
-                (11659, 41263),
-                (10233, 19792),
-            ],
-        ),
-        "🙏" => (
-            "cam on",
-            "Cảm ơn",
-            &[
-                (12778, 100433),
-                (12694, 99120),
-                (61900, 98932),
-                (12238, 49507),
-                (12013, 47153),
-                (11986, 46706),
-                (10302, 21464),
-            ],
-        ),
-        "👋" => (
-            "hi",
-            "Xin chào",
-            &[
-                (61900, 98930),
-                (12778, 100421),
-                (12713, 99407),
-                (12676, 50746),
-                (12238, 49510),
-                (12045, 47621),
-                (12013, 47160),
-                (10302, 21458),
-            ],
-        ),
-        "🥳" | "🎉" | "🎊" | "🎂" => (
-            "chuc mung",
-            "Chúc mừng",
-            &[
-                (12713, 99406),
-                (12694, 99113),
-                (12238, 49511),
-                (12048, 47666),
-                (12013, 47161),
-                (11978, 46570),
-                (11954, 46193),
-                (10233, 19787),
-            ],
-        ),
-        _ if has_vn_diacritics => match low.as_str() {
-            "chào" | "xin chào" | "chào bạn" | "chào anh" | "chào chị" | "chào em"
-            | "hế lô" => (
-                "hi",
-                "Xin chào",
+    let (api_kw, label_prefix, pairs): (&'static str, &'static str, &[(u64, u64)]) =
+        match low.as_str() {
+            "🙂" | "😊" | "☺️" | "🙃" | ":)" | ":-)" | ":3" | "^^" | ":>" => (
+                ":)",
+                "Mỉm cười",
                 &[
-                    (61900, 98930),
-                    (12778, 100421),
-                    (12713, 99407),
-                    (12676, 50746),
-                    (12646, 50594),
-                    (12238, 49510),
-                    (12045, 47621),
-                    (12013, 47160),
-                    (10302, 21458),
-                    (10130, 18009),
-                ],
-            ),
-            "cười" | "vui quá" | "mắc cười" | "buồn cười" => (
-                "haha",
-                "Haha",
-                &[
-                    (12686, 99001),
                     (12685, 98981),
-                    (12334, 49787),
-                    (12244, 49561),
-                    (12059, 47856),
-                    (12048, 47668),
-                    (12045, 47617),
-                    (12017, 47228),
-                    (12013, 47154),
-                    (10302, 21461),
-                    (10183, 18910),
+                    (12815, 101002),
+                    (12748, 99980),
+                    (12705, 99279),
+                    (11978, 46575),
+                    (11954, 46182),
+                    (11934, 45835),
+                    (11870, 44809),
+                    (11807, 43863),
+                    (11659, 41251),
+                    (11150, 34827),
+                    (10302, 21459),
                 ],
             ),
-            "ừ" | "ờ" | "vâng" | "dạ" | "ok chị" | "oke chị" | "tuyệt" | "chuẩn"
-            | "được" => (
+            "🙁" | "☹️" | "☹" | "😢" | "😭" | "😞" | "😔" | "🥺" | "🥹" | ":(" | ":(("
+            | ":-(( " | ":-(" | "t_t" => (
+                "buon",
+                "Buồn",
+                &[
+                    (12815, 101012),
+                    (12748, 99985),
+                    (12556, 50348),
+                    (12334, 49778),
+                    (12238, 49500),
+                    (12013, 47156),
+                    (11978, 46576),
+                    (11955, 46210),
+                    (11938, 45902),
+                    (11917, 45594),
+                    (10302, 21456),
+                ],
+            ),
+            "😂" | "🤣" | "😆" | "😄" | "😁" | "=))" | "=)))" | ":))" | ":)))" | ":v" => {
+                (
+                    "haha",
+                    "Haha",
+                    &[
+                        (12686, 99001),
+                        (12685, 98981),
+                        (12334, 49787),
+                        (12244, 49561),
+                        (12059, 47856),
+                        (12048, 47668),
+                        (12045, 47617),
+                        (12022, 47275),
+                        (12017, 47228),
+                        (12013, 47154),
+                        (10302, 21461),
+                        (10183, 18910),
+                    ],
+                )
+            }
+            "❤️" | "❤" | "💕" | "💖" | "💘" | "💗" | "💓" | "😍" | "🥰" | "😘" | "<3" | ":*"
+            | ":-*" => (
+                "yêu",
+                "Yêu thương",
+                &[
+                    (12556, 50344),
+                    (12334, 49774),
+                    (12017, 47227),
+                    (12013, 47147),
+                    (11986, 46709),
+                    (10939, 30474),
+                    (10751, 27695),
+                    (10302, 21460),
+                    (10117, 17751),
+                ],
+            ),
+            "👍" | "👌" | "✅" | "💯" | "🤝" | "/-strong" => (
                 "ok",
                 "OK",
                 &[
@@ -407,63 +536,7 @@ pub(super) fn instant_contextual_stickers_exact(trimmed: &str) -> Option<(&'stat
                     (10177, 18869),
                 ],
             ),
-            "cảm ơn" | "cám ơn" | "cảm ơn bạn" | "cảm ơn anh" | "cảm ơn chị"
-            | "cảm ơn em" | "cảm ơn nhiều" => (
-                "cam on",
-                "Cảm ơn",
-                &[
-                    (12778, 100433),
-                    (12694, 99120),
-                    (61900, 98932),
-                    (12238, 49507),
-                    (12017, 47226),
-                    (12013, 47153),
-                    (11986, 46706),
-                    (10302, 21464),
-                ],
-            ),
-            "yêu" | "thương" | "nhớ" | "nhớ quá" | "thả tim" => (
-                "yêu",
-                "Yêu thương",
-                &[
-                    (12556, 50344),
-                    (12334, 49774),
-                    (12017, 47227),
-                    (12013, 47147),
-                    (11986, 46709),
-                    (10939, 30474),
-                    (10751, 27695),
-                    (10302, 21460),
-                    (10117, 17751),
-                ],
-            ),
-            "buồn" | "buồn quá" | "khóc" | "chán" | "chán quá" | "tủi thân" => (
-                "buon",
-                "Buồn",
-                &[
-                    (12815, 101012),
-                    (12748, 99985),
-                    (12556, 50348),
-                    (12334, 49778),
-                    (12238, 49500),
-                    (12013, 47156),
-                    (11978, 46576),
-                    (11955, 46210),
-                    (11938, 45902),
-                    (10302, 21456),
-                ],
-            ),
-            "xin lỗi" => (
-                "xin loi",
-                "Xin lỗi",
-                &[
-                    (61900, 98931),
-                    (10601, 25586),
-                    (10398, 23046),
-                    (10233, 19779),
-                ],
-            ),
-            "giận" | "tức" | "bực" | "bực mình" | "giận dỗi" => (
+            "😠" | "😡" | "🤬" | "😤" | ":-h" => (
                 "giận",
                 "Giận",
                 &[
@@ -471,11 +544,40 @@ pub(super) fn instant_contextual_stickers_exact(trimmed: &str) -> Option<(&'stat
                     (12686, 98993),
                     (12052, 47748),
                     (11917, 45599),
+                    (11906, 45422),
                     (11454, 38359),
                 ],
             ),
-            "ngủ" | "ngủ ngon" | "ngủ ngon nha" | "ngủ ngon nhé" | "buồn ngủ"
-            | "đi ngủ" => (
+            "..." | "...." | "....." | "......" | "-_-" | "==" | "=.=" | "😐" | "😑" | "🙄"
+            | "😒" => (
+                "....",
+                "Cạn lời",
+                &[
+                    (12740, 99857),
+                    (12334, 49777),
+                    (12013, 47155),
+                    (11917, 45601),
+                    (11788, 43550),
+                    (10398, 23044),
+                    (10313, 21646),
+                ],
+            ),
+            "?" | "??" | "???" | "🤔" | "😮" | "😲" | "😯" | "@@" | "👀" => (
+                "??",
+                "Thắc mắc",
+                &[
+                    (12748, 99990),
+                    (12738, 99830),
+                    (12686, 98999),
+                    (12676, 50751),
+                    (12616, 50519),
+                    (12334, 49780),
+                    (12238, 49515),
+                    (12013, 47158),
+                    (10302, 21463),
+                ],
+            ),
+            "😴" | "😪" | "🥱" | "💤" => (
                 "ngu ngon",
                 "Ngủ ngon",
                 &[
@@ -489,70 +591,20 @@ pub(super) fn instant_contextual_stickers_exact(trimmed: &str) -> Option<(&'stat
                     (10233, 19792),
                 ],
             ),
-            "tạm biệt" | "tạm biệt nhé" => (
-                "tam biet",
-                "Tạm biệt",
+            "🙏" => (
+                "cam on",
+                "Cảm ơn",
                 &[
-                    (12045, 47622),
-                    (11986, 46710),
-                    (11969, 46452),
-                    (11960, 46294),
-                    (11956, 46225),
-                    (11949, 46100),
-                    (11901, 45345),
-                    (10233, 19791),
+                    (12778, 100433),
+                    (12694, 99120),
+                    (61900, 98932),
+                    (12238, 49507),
+                    (12013, 47153),
+                    (11986, 46706),
+                    (10302, 21464),
                 ],
             ),
-            "ngạc nhiên" | "hóng" | "ảo thật" => (
-                "wow",
-                "Ngạc nhiên",
-                &[
-                    (11786, 43523),
-                    (11482, 38578),
-                    (11150, 34109),
-                    (10939, 30474),
-                    (10606, 25682),
-                    (10302, 21462),
-                    (10302, 21463),
-                    (10117, 17757),
-                ],
-            ),
-            "chúc mừng" | "sinh nhật" | "tết" => (
-                "chuc mung",
-                "Chúc mừng",
-                &[
-                    (12713, 99406),
-                    (12694, 99113),
-                    (12238, 49511),
-                    (12048, 47666),
-                    (12013, 47161),
-                    (11978, 46570),
-                    (11954, 46193),
-                    (10233, 19787),
-                ],
-            ),
-            "đói" | "đói bụng" | "đói quá" | "ăn" | "ăn cơm" | "nhậu" | "đi nhậu"
-            | "cà phê" => (
-                "đói",
-                "Ăn uống",
-                &[
-                    (12778, 100422),
-                    (11819, 44039),
-                    (11454, 38361),
-                    (10939, 30489),
-                    (10799, 28642),
-                    (10786, 28362),
-                    (10655, 26307),
-                    (10653, 26271),
-                    (10242, 20065),
-                ],
-            ),
-            _ => return None,
-        },
-        _ => match low.as_str() {
-            "hi" | "hii" | "hiii" | "hello" | "helo" | "he lo" | "chao" | "xin chao"
-            | "chao ban" | "hi ban" | "hi anh" | "hi chi" | "hi em" | "hello anh"
-            | "hello chi" | "hello em" | "alo" => (
+            "👋" => (
                 "hi",
                 "Xin chào",
                 &[
@@ -560,164 +612,13 @@ pub(super) fn instant_contextual_stickers_exact(trimmed: &str) -> Option<(&'stat
                     (12778, 100421),
                     (12713, 99407),
                     (12676, 50746),
-                    (12646, 50594),
                     (12238, 49510),
                     (12045, 47621),
                     (12013, 47160),
                     (10302, 21458),
-                    (10130, 18009),
                 ],
             ),
-            "haha" | "hahaha" | "hihi" | "hihihi" | "hehe" | "hoho" | "kaka" | "cuoi"
-            | "vui" | "vui qua" | "mac cuoi" | "buon cuoi" => (
-                "haha",
-                "Haha",
-                &[
-                    (12686, 99001),
-                    (12685, 98981),
-                    (12334, 49787),
-                    (12244, 49561),
-                    (12059, 47856),
-                    (12048, 47668),
-                    (12045, 47617),
-                    (12017, 47228),
-                    (12013, 47154),
-                    (10302, 21461),
-                    (10183, 18910),
-                ],
-            ),
-            "ok" | "oke" | "okay" | "oki" | "okie" | "uk" | "uh" | "uhm" | "um" | "vang"
-            | "da" | "ok anh" | "ok chi" | "ok em" | "oke anh" | "oke em" | "tuyet"
-            | "chuan" | "duoc" => (
-                "ok",
-                "OK",
-                &[
-                    (61900, 98936),
-                    (12778, 100425),
-                    (12748, 99981),
-                    (12676, 50745),
-                    (12646, 50589),
-                    (12556, 50345),
-                    (12334, 49789),
-                    (12238, 49497),
-                    (10233, 19773),
-                    (10177, 18869),
-                ],
-            ),
-            "cam on" | "cam on ban" | "cam on anh" | "cam on chi" | "cam on em"
-            | "cam on nhieu" | "thank" | "thanks" | "thank you" | "tks" | "tkss"
-            | "thank kiu" => (
-                "cam on",
-                "Cảm ơn",
-                &[
-                    (12778, 100433),
-                    (12694, 99120),
-                    (61900, 98932),
-                    (12238, 49507),
-                    (12017, 47226),
-                    (12013, 47153),
-                    (11986, 46706),
-                    (10302, 21464),
-                ],
-            ),
-            "yeu" | "iu" | "love" | "love u" | "love you" | "thuong" | "nho" | "nho qua"
-            | "tha tim" | "tim" => (
-                "yêu",
-                "Yêu thương",
-                &[
-                    (12556, 50344),
-                    (12334, 49774),
-                    (12017, 47227),
-                    (12013, 47147),
-                    (11986, 46709),
-                    (10939, 30474),
-                    (10751, 27695),
-                    (10302, 21460),
-                    (10117, 17751),
-                ],
-            ),
-            "buon" | "buon qua" | "khoc" | "huhu" | "hic" | "chan" | "chan qua" | "tui than" => (
-                "buon",
-                "Buồn",
-                &[
-                    (12815, 101012),
-                    (12748, 99985),
-                    (12556, 50348),
-                    (12334, 49778),
-                    (12238, 49500),
-                    (12013, 47156),
-                    (11978, 46576),
-                    (11955, 46210),
-                    (11938, 45902),
-                    (10302, 21456),
-                ],
-            ),
-            "xin loi" | "sorry" | "sr" | "so ry" => (
-                "xin loi",
-                "Xin lỗi",
-                &[
-                    (61900, 98931),
-                    (10601, 25586),
-                    (10398, 23046),
-                    (10233, 19779),
-                ],
-            ),
-            "gian" | "tuc" | "buc" | "buc minh" | "gian doi" | "cay" => (
-                "giận",
-                "Giận",
-                &[
-                    (61900, 98933),
-                    (12686, 98993),
-                    (12052, 47748),
-                    (11917, 45599),
-                    (11454, 38359),
-                ],
-            ),
-            "ngu" | "ngu ngon" | "ngu ngon nha" | "ngu ngon nhe" | "good night" | "gn"
-            | "buon ngu" | "di ngu" => (
-                "ngu ngon",
-                "Ngủ ngon",
-                &[
-                    (12778, 100431),
-                    (11986, 46713),
-                    (11962, 46332),
-                    (11956, 46226),
-                    (11949, 46092),
-                    (11819, 44048),
-                    (11659, 41263),
-                    (10233, 19792),
-                ],
-            ),
-            "bye" | "byebye" | "good bye" | "goodbye" | "tam biet" | "tam biet nhe"
-            | "bibi" | "pp" => (
-                "tam biet",
-                "Tạm biệt",
-                &[
-                    (12045, 47622),
-                    (11986, 46710),
-                    (11969, 46452),
-                    (11960, 46294),
-                    (11956, 46225),
-                    (11949, 46100),
-                    (11901, 45345),
-                    (10233, 19791),
-                ],
-            ),
-            "wow" | "ngac nhien" | "hong" | "ao that" => (
-                "wow",
-                "Ngạc nhiên",
-                &[
-                    (11786, 43523),
-                    (11482, 38578),
-                    (11150, 34109),
-                    (10939, 30474),
-                    (10606, 25682),
-                    (10302, 21462),
-                    (10302, 21463),
-                    (10117, 17757),
-                ],
-            ),
-            "chuc mung" | "hpbd" | "sinh nhat" | "happy birthday" | "tet" => (
+            "🥳" | "🎉" | "🎊" | "🎂" => (
                 "chuc mung",
                 "Chúc mừng",
                 &[
@@ -731,25 +632,404 @@ pub(super) fn instant_contextual_stickers_exact(trimmed: &str) -> Option<(&'stat
                     (10233, 19787),
                 ],
             ),
-            "doi" | "doi bung" | "doi qua" | "an" | "an com" | "nhau" | "di nhau" | "cf"
-            | "cafe" | "ca phe" => (
-                "đói",
-                "Ăn uống",
-                &[
-                    (12778, 100422),
-                    (11819, 44039),
-                    (11454, 38361),
-                    (10939, 30489),
-                    (10799, 28642),
-                    (10786, 28362),
-                    (10655, 26307),
-                    (10653, 26271),
-                    (10242, 20065),
-                ],
-            ),
-            _ => return None,
-        },
-    };
+            _ if has_vn_diacritics => match low.as_str() {
+                "chào" | "xin chào" | "chào bạn" | "chào anh" | "chào chị" | "chào em"
+                | "hế lô" => (
+                    "hi",
+                    "Xin chào",
+                    &[
+                        (61900, 98930),
+                        (12778, 100421),
+                        (12713, 99407),
+                        (12676, 50746),
+                        (12646, 50594),
+                        (12238, 49510),
+                        (12045, 47621),
+                        (12013, 47160),
+                        (10302, 21458),
+                        (10130, 18009),
+                    ],
+                ),
+                "cười" | "vui quá" | "mắc cười" | "buồn cười" => (
+                    "haha",
+                    "Haha",
+                    &[
+                        (12686, 99001),
+                        (12685, 98981),
+                        (12334, 49787),
+                        (12244, 49561),
+                        (12059, 47856),
+                        (12048, 47668),
+                        (12045, 47617),
+                        (12017, 47228),
+                        (12013, 47154),
+                        (10302, 21461),
+                        (10183, 18910),
+                    ],
+                ),
+                "ừ" | "ờ" | "vâng" | "dạ" | "ok chị" | "oke chị" | "tuyệt" | "chuẩn" | "được" => {
+                    (
+                        "ok",
+                        "OK",
+                        &[
+                            (61900, 98936),
+                            (12778, 100425),
+                            (12748, 99981),
+                            (12676, 50745),
+                            (12646, 50589),
+                            (12556, 50345),
+                            (12334, 49789),
+                            (12238, 49497),
+                            (10233, 19773),
+                            (10177, 18869),
+                        ],
+                    )
+                }
+                "cảm ơn" | "cám ơn" | "cảm ơn bạn" | "cảm ơn anh" | "cảm ơn chị" | "cảm ơn em"
+                | "cảm ơn nhiều" => (
+                    "cam on",
+                    "Cảm ơn",
+                    &[
+                        (12778, 100433),
+                        (12694, 99120),
+                        (61900, 98932),
+                        (12238, 49507),
+                        (12017, 47226),
+                        (12013, 47153),
+                        (11986, 46706),
+                        (10302, 21464),
+                    ],
+                ),
+                "yêu" | "thương" | "nhớ" | "nhớ quá" | "thả tim" => (
+                    "yêu",
+                    "Yêu thương",
+                    &[
+                        (12556, 50344),
+                        (12334, 49774),
+                        (12017, 47227),
+                        (12013, 47147),
+                        (11986, 46709),
+                        (10939, 30474),
+                        (10751, 27695),
+                        (10302, 21460),
+                        (10117, 17751),
+                    ],
+                ),
+                "buồn" | "buồn quá" | "khóc" | "chán" | "chán quá" | "tủi thân" => (
+                    "buon",
+                    "Buồn",
+                    &[
+                        (12815, 101012),
+                        (12748, 99985),
+                        (12556, 50348),
+                        (12334, 49778),
+                        (12238, 49500),
+                        (12013, 47156),
+                        (11978, 46576),
+                        (11955, 46210),
+                        (11938, 45902),
+                        (10302, 21456),
+                    ],
+                ),
+                "xin lỗi" => (
+                    "xin loi",
+                    "Xin lỗi",
+                    &[
+                        (61900, 98931),
+                        (10601, 25586),
+                        (10398, 23046),
+                        (10233, 19779),
+                    ],
+                ),
+                "giận" | "tức" | "bực" | "bực mình" | "giận dỗi" => (
+                    "giận",
+                    "Giận",
+                    &[
+                        (61900, 98933),
+                        (12686, 98993),
+                        (12052, 47748),
+                        (11917, 45599),
+                        (11454, 38359),
+                    ],
+                ),
+                "ngủ" | "ngủ ngon" | "ngủ ngon nha" | "ngủ ngon nhé" | "buồn ngủ" | "đi ngủ" => {
+                    (
+                        "ngu ngon",
+                        "Ngủ ngon",
+                        &[
+                            (12778, 100431),
+                            (11986, 46713),
+                            (11962, 46332),
+                            (11956, 46226),
+                            (11949, 46092),
+                            (11819, 44048),
+                            (11659, 41263),
+                            (10233, 19792),
+                        ],
+                    )
+                }
+                "tạm biệt" | "tạm biệt nhé" => (
+                    "tam biet",
+                    "Tạm biệt",
+                    &[
+                        (12045, 47622),
+                        (11986, 46710),
+                        (11969, 46452),
+                        (11960, 46294),
+                        (11956, 46225),
+                        (11949, 46100),
+                        (11901, 45345),
+                        (10233, 19791),
+                    ],
+                ),
+                "ngạc nhiên" | "hóng" | "ảo thật" => (
+                    "wow",
+                    "Ngạc nhiên",
+                    &[
+                        (11786, 43523),
+                        (11482, 38578),
+                        (11150, 34109),
+                        (10939, 30474),
+                        (10606, 25682),
+                        (10302, 21462),
+                        (10302, 21463),
+                        (10117, 17757),
+                    ],
+                ),
+                "chúc mừng" | "sinh nhật" | "tết" => (
+                    "chuc mung",
+                    "Chúc mừng",
+                    &[
+                        (12713, 99406),
+                        (12694, 99113),
+                        (12238, 49511),
+                        (12048, 47666),
+                        (12013, 47161),
+                        (11978, 46570),
+                        (11954, 46193),
+                        (10233, 19787),
+                    ],
+                ),
+                "đói" | "đói bụng" | "đói quá" | "ăn" | "ăn cơm" | "nhậu" | "đi nhậu"
+                | "cà phê" => (
+                    "đói",
+                    "Ăn uống",
+                    &[
+                        (12778, 100422),
+                        (11819, 44039),
+                        (11454, 38361),
+                        (10939, 30489),
+                        (10799, 28642),
+                        (10786, 28362),
+                        (10655, 26307),
+                        (10653, 26271),
+                        (10242, 20065),
+                    ],
+                ),
+                _ => return None,
+            },
+            _ => match low.as_str() {
+                "hi" | "hii" | "hiii" | "hello" | "helo" | "he lo" | "chao" | "xin chao"
+                | "chao ban" | "hi ban" | "hi anh" | "hi chi" | "hi em" | "hello anh"
+                | "hello chi" | "hello em" | "alo" => (
+                    "hi",
+                    "Xin chào",
+                    &[
+                        (61900, 98930),
+                        (12778, 100421),
+                        (12713, 99407),
+                        (12676, 50746),
+                        (12646, 50594),
+                        (12238, 49510),
+                        (12045, 47621),
+                        (12013, 47160),
+                        (10302, 21458),
+                        (10130, 18009),
+                    ],
+                ),
+                "haha" | "hahaha" | "hihi" | "hihihi" | "hehe" | "hoho" | "kaka" | "cuoi"
+                | "vui" | "vui qua" | "mac cuoi" | "buon cuoi" => (
+                    "haha",
+                    "Haha",
+                    &[
+                        (12686, 99001),
+                        (12685, 98981),
+                        (12334, 49787),
+                        (12244, 49561),
+                        (12059, 47856),
+                        (12048, 47668),
+                        (12045, 47617),
+                        (12017, 47228),
+                        (12013, 47154),
+                        (10302, 21461),
+                        (10183, 18910),
+                    ],
+                ),
+                "ok" | "oke" | "okay" | "oki" | "okie" | "uk" | "uh" | "uhm" | "um" | "vang"
+                | "da" | "ok anh" | "ok chi" | "ok em" | "oke anh" | "oke em" | "tuyet"
+                | "chuan" | "duoc" => (
+                    "ok",
+                    "OK",
+                    &[
+                        (61900, 98936),
+                        (12778, 100425),
+                        (12748, 99981),
+                        (12676, 50745),
+                        (12646, 50589),
+                        (12556, 50345),
+                        (12334, 49789),
+                        (12238, 49497),
+                        (10233, 19773),
+                        (10177, 18869),
+                    ],
+                ),
+                "cam on" | "cam on ban" | "cam on anh" | "cam on chi" | "cam on em"
+                | "cam on nhieu" | "thank" | "thanks" | "thank you" | "tks" | "tkss"
+                | "thank kiu" => (
+                    "cam on",
+                    "Cảm ơn",
+                    &[
+                        (12778, 100433),
+                        (12694, 99120),
+                        (61900, 98932),
+                        (12238, 49507),
+                        (12017, 47226),
+                        (12013, 47153),
+                        (11986, 46706),
+                        (10302, 21464),
+                    ],
+                ),
+                "yeu" | "iu" | "love" | "love u" | "love you" | "thuong" | "nho" | "nho qua"
+                | "tha tim" | "tim" => (
+                    "yêu",
+                    "Yêu thương",
+                    &[
+                        (12556, 50344),
+                        (12334, 49774),
+                        (12017, 47227),
+                        (12013, 47147),
+                        (11986, 46709),
+                        (10939, 30474),
+                        (10751, 27695),
+                        (10302, 21460),
+                        (10117, 17751),
+                    ],
+                ),
+                "buon" | "buon qua" | "khoc" | "huhu" | "hic" | "chan" | "chan qua"
+                | "tui than" => (
+                    "buon",
+                    "Buồn",
+                    &[
+                        (12815, 101012),
+                        (12748, 99985),
+                        (12556, 50348),
+                        (12334, 49778),
+                        (12238, 49500),
+                        (12013, 47156),
+                        (11978, 46576),
+                        (11955, 46210),
+                        (11938, 45902),
+                        (10302, 21456),
+                    ],
+                ),
+                "xin loi" | "sorry" | "sr" | "so ry" => (
+                    "xin loi",
+                    "Xin lỗi",
+                    &[
+                        (61900, 98931),
+                        (10601, 25586),
+                        (10398, 23046),
+                        (10233, 19779),
+                    ],
+                ),
+                "gian" | "tuc" | "buc" | "buc minh" | "gian doi" | "cay" => (
+                    "giận",
+                    "Giận",
+                    &[
+                        (61900, 98933),
+                        (12686, 98993),
+                        (12052, 47748),
+                        (11917, 45599),
+                        (11454, 38359),
+                    ],
+                ),
+                "ngu" | "ngu ngon" | "ngu ngon nha" | "ngu ngon nhe" | "good night" | "gn"
+                | "buon ngu" | "di ngu" => (
+                    "ngu ngon",
+                    "Ngủ ngon",
+                    &[
+                        (12778, 100431),
+                        (11986, 46713),
+                        (11962, 46332),
+                        (11956, 46226),
+                        (11949, 46092),
+                        (11819, 44048),
+                        (11659, 41263),
+                        (10233, 19792),
+                    ],
+                ),
+                "bye" | "byebye" | "good bye" | "goodbye" | "tam biet" | "tam biet nhe"
+                | "bibi" | "pp" => (
+                    "tam biet",
+                    "Tạm biệt",
+                    &[
+                        (12045, 47622),
+                        (11986, 46710),
+                        (11969, 46452),
+                        (11960, 46294),
+                        (11956, 46225),
+                        (11949, 46100),
+                        (11901, 45345),
+                        (10233, 19791),
+                    ],
+                ),
+                "wow" | "ngac nhien" | "hong" | "ao that" => (
+                    "wow",
+                    "Ngạc nhiên",
+                    &[
+                        (11786, 43523),
+                        (11482, 38578),
+                        (11150, 34109),
+                        (10939, 30474),
+                        (10606, 25682),
+                        (10302, 21462),
+                        (10302, 21463),
+                        (10117, 17757),
+                    ],
+                ),
+                "chuc mung" | "hpbd" | "sinh nhat" | "happy birthday" | "tet" => (
+                    "chuc mung",
+                    "Chúc mừng",
+                    &[
+                        (12713, 99406),
+                        (12694, 99113),
+                        (12238, 49511),
+                        (12048, 47666),
+                        (12013, 47161),
+                        (11978, 46570),
+                        (11954, 46193),
+                        (10233, 19787),
+                    ],
+                ),
+                "doi" | "doi bung" | "doi qua" | "an" | "an com" | "nhau" | "di nhau" | "cf"
+                | "cafe" | "ca phe" => (
+                    "đói",
+                    "Ăn uống",
+                    &[
+                        (12778, 100422),
+                        (11819, 44039),
+                        (11454, 38361),
+                        (10939, 30489),
+                        (10799, 28642),
+                        (10786, 28362),
+                        (10655, 26307),
+                        (10653, 26271),
+                        (10242, 20065),
+                    ],
+                ),
+                _ => return None,
+            },
+        };
     let items = pairs
         .iter()
         .enumerate()
@@ -1435,7 +1715,10 @@ impl ZaloGuiApp {
 
         let strip_h = 80.0_f32;
         let strip_w = composer_rect.width().max(200.0);
-        let pos = Pos2::new(composer_rect.left(), (composer_rect.top() - strip_h).max(48.0));
+        let pos = Pos2::new(
+            composer_rect.left(),
+            (composer_rect.top() - strip_h).max(48.0),
+        );
 
         let mut send_item: Option<crate::chat::StickerItem> = None;
         let mut dismiss_clicked = false;
@@ -1695,7 +1978,6 @@ impl ZaloGuiApp {
             }
         }
     }
-
 
     pub(super) fn sticker_tab_salt(&self) -> u64 {
         match self.sticker_tab {

@@ -288,7 +288,14 @@ pub fn describe_rtcp(rtcp: &[u8]) -> (String, bool) {
                 if b + 24 > end {
                     break;
                 }
-                let u32at = |o: usize| u32::from_be_bytes([rtcp[b + o], rtcp[b + o + 1], rtcp[b + o + 2], rtcp[b + o + 3]]);
+                let u32at = |o: usize| {
+                    u32::from_be_bytes([
+                        rtcp[b + o],
+                        rtcp[b + o + 1],
+                        rtcp[b + o + 2],
+                        rtcp[b + o + 3],
+                    ])
+                };
                 let cum = u32at(4) & 0x00FF_FFFF;
                 d.push_str(&format!(
                     ",blk[ssrc={:#010x},fl={},lost={},hi={},jit={},lsr={:#x},dlsr={}]",
@@ -448,7 +455,15 @@ impl WireLog {
     }
 
     /// Record an RTCP datagram (sent `">"` or received `"<"`). Returns true if it contains PLI/FIR.
-    pub fn rtcp(&mut self, dir: &str, via: Via, outer: u8, wire_len: usize, peer: &str, inner: &[u8]) -> bool {
+    pub fn rtcp(
+        &mut self,
+        dir: &str,
+        via: Via,
+        outer: u8,
+        wire_len: usize,
+        peer: &str,
+        inner: &[u8],
+    ) -> bool {
         let (desc, kf) = describe_rtcp(inner);
         if dir == "<" {
             self.max_wire_rx = self.max_wire_rx.max(wire_len);
@@ -572,7 +587,10 @@ mod tests {
     #[test]
     fn parses_rtp_header_with_csrc_and_extension() {
         let h = parse_rtp(&rtp(97, true, 7, &[0x65, 1, 2])).unwrap();
-        assert_eq!((h.pt, h.marker, h.seq, h.ts, h.ssrc), (97, true, 7, 1000, 0xAABBCCDD));
+        assert_eq!(
+            (h.pt, h.marker, h.seq, h.ts, h.ssrc),
+            (97, true, 7, 1000, 0xAABBCCDD)
+        );
         assert_eq!((h.payload_off, h.payload_len), (12, 3));
         // X bit + 1 extension word + 1 CSRC
         let mut p = vec![0x91, 96, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3];
@@ -580,7 +598,10 @@ mod tests {
         p.extend_from_slice(&[0xBE, 0xDE, 0, 1, 1, 2, 3, 4]); // ext header + 1 word
         p.extend_from_slice(&[0x41, 0x9A]);
         let h = parse_rtp(&p).unwrap();
-        assert_eq!((h.csrc, h.ext, h.payload_off, h.payload_len), (1, true, 24, 2));
+        assert_eq!(
+            (h.csrc, h.ext, h.payload_off, h.payload_len),
+            (1, true, 24, 2)
+        );
         assert!(parse_rtp(&[0x40; 20]).is_none());
         assert!(parse_rtp(&[0x80; 5]).is_none());
     }
@@ -597,7 +618,10 @@ mod tests {
         assert_eq!(describe_h264_payload(&stap), "stapA[7,8]");
         assert_eq!(describe_h264_payload(&[]), "empty");
         // Zalo format as captured
-        assert_eq!(describe_h264_payload(&[0, 0, 0, 1, 0x21, 0xE1]), "annexb[1]");
+        assert_eq!(
+            describe_h264_payload(&[0, 0, 0, 1, 0x21, 0xE1]),
+            "annexb[1]"
+        );
         assert_eq!(
             describe_h264_payload(&[0x1C, 0x80, 0, 0, 0, 1, 0x27, 0x42, 0, 0, 1, 0x28]),
             "zfrag/S/annexb[7,8]"
@@ -640,17 +664,42 @@ mod tests {
     fn stats_track_loss_marker_nal_and_mtu_hint() {
         std::env::set_var("ZALO_VOIP_LOG", "off");
         let mut w = WireLog::new();
-        w.rtp("<", 0x0E, 1201, "1.2.3.4:5", &rtp(97, false, 10, &[0x7C, 0x85, 1]));
-        w.rtp("<", 0x0E, 1500, "1.2.3.4:5", &rtp(97, false, 11, &[0x7C, 0x05, 1]));
+        w.rtp(
+            "<",
+            0x0E,
+            1201,
+            "1.2.3.4:5",
+            &rtp(97, false, 10, &[0x7C, 0x85, 1]),
+        );
+        w.rtp(
+            "<",
+            0x0E,
+            1500,
+            "1.2.3.4:5",
+            &rtp(97, false, 11, &[0x7C, 0x05, 1]),
+        );
         // seq 12, 13 lost
-        w.rtp("<", 0x0E, 300, "1.2.3.4:5", &rtp(97, true, 14, &[0x7C, 0x45, 1]));
+        w.rtp(
+            "<",
+            0x0E,
+            300,
+            "1.2.3.4:5",
+            &rtp(97, true, 14, &[0x7C, 0x45, 1]),
+        );
         let st = w.streams.values().next().unwrap();
         assert_eq!((st.pkts, st.lost, st.marker), (3, 2, 1));
         assert_eq!((st.min_len, st.max_len), (300, 1500));
         assert_eq!(st.nal.get("fuA/nal5/S"), Some(&1));
         assert_eq!(w.max_wire_rx, 1500);
         assert_eq!(w.max_wire_tx, 0);
-        assert!(w.rtcp("<", Via::RtcpSock, 0x04, 40, "p", &[0x81, 206, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2]));
+        assert!(w.rtcp(
+            "<",
+            Via::RtcpSock,
+            0x04,
+            40,
+            "p",
+            &[0x81, 206, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2]
+        ));
     }
 
     #[test]

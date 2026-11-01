@@ -27,8 +27,8 @@ pub fn encrypt_password(phone: &str, imei: &str, password: &str, salt: &str) -> 
 
     let even: Vec<char> = hex.chars().step_by(2).collect();
     let odd: Vec<char> = hex.chars().skip(1).step_by(2).collect();
-    let enk: String = even[..16].iter().collect::<String>()
-        + &odd.iter().rev().take(16).collect::<String>();
+    let enk: String =
+        even[..16].iter().collect::<String>() + &odd.iter().rev().take(16).collect::<String>();
 
     let mut plain = salt.to_string();
     plain.extend(password.chars().rev());
@@ -47,7 +47,9 @@ pub fn random_salt() -> String {
         ^ ((std::process::id() as u64) << 17);
     let mut out = String::with_capacity(8);
     for _ in 0..8 {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         out.push(ALPHA[(seed >> 33) as usize % ALPHA.len()] as char);
     }
     out
@@ -99,11 +101,7 @@ pub async fn get_server_info(s: &Session) -> Result<Value> {
 ///
 /// Kept as a diagnostic path — it exposes what the server objects to without the v2
 /// encryption layer in the way.
-pub async fn login_by_password_v1(
-    s: &mut Session,
-    phone: &str,
-    password: &str,
-) -> Result<Value> {
+pub async fn login_by_password_v1(s: &mut Session, phone: &str, password: &str) -> Result<Value> {
     let mut o = serde_json::Map::new();
     o.insert("phone_num".into(), json!(phone));
     o.insert("password".into(), json!(password));
@@ -124,7 +122,10 @@ pub async fn login_by_password_v1(
 
     let code = resp.get("error_code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 0 {
-        let msg = resp.get("error_message").and_then(|m| m.as_str()).unwrap_or("");
+        let msg = resp
+            .get("error_message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("");
         anyhow::bail!("v1 login error {code}: {msg}");
     }
     if let Some(cfg) = resp.get("data") {
@@ -192,7 +193,10 @@ pub async fn login_by_password(
     // Surface an error code hidden inside the encrypted envelope.
     let code = resp.get("error_code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 0 {
-        let msg = resp.get("error_message").and_then(|m| m.as_str()).unwrap_or("");
+        let msg = resp
+            .get("error_message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("");
         anyhow::bail!("login error {code}: {msg}");
     }
 
@@ -242,7 +246,10 @@ pub async fn get_login_info(s: &Session) -> Result<Value> {
         match s.get(&url).await {
             Ok(resp) => {
                 let decrypted = s.maybe_decrypt(resp, cipher.key().as_bytes()).await;
-                let code = decrypted.get("error_code").and_then(|c| c.as_i64()).unwrap_or(0);
+                let code = decrypted
+                    .get("error_code")
+                    .and_then(|c| c.as_i64())
+                    .unwrap_or(0);
                 if code == 0 {
                     return Ok(decrypted);
                 }
@@ -263,7 +270,10 @@ pub fn apply_login_config(s: &mut Session, cfg: &Value) {
     let new_dkey = cfg
         .get("uid")
         .or_else(|| cfg.get("userId"))
-        .or_else(|| cfg.get("account").and_then(|a| a.get("userId").or_else(|| a.get("uid"))))
+        .or_else(|| {
+            cfg.get("account")
+                .and_then(|a| a.get("userId").or_else(|| a.get("uid")))
+        })
         .or_else(|| cfg.get("dkey"))
         .and_then(as_str)
         .unwrap_or_default();
@@ -281,7 +291,11 @@ pub fn apply_login_config(s: &mut Session, cfg: &Value) {
         .get("account")
         .and_then(|a| a.get("display_name"))
         .or_else(|| cfg.get("display_name"))
-        .or_else(|| cfg.get("settings").and_then(|st| st.get("profile")).and_then(|p| p.get("name")))
+        .or_else(|| {
+            cfg.get("settings")
+                .and_then(|st| st.get("profile"))
+                .and_then(|p| p.get("name"))
+        })
         .and_then(as_str)
         .unwrap_or_default();
 
@@ -294,16 +308,25 @@ pub fn apply_login_config(s: &mut Session, cfg: &Value) {
     }
 
     let mut current = s.login.take().unwrap_or_default();
-    if !new_dkey.is_empty() { current.uin = new_dkey.to_string(); }
-    if !new_enk.is_empty() { current.zpw_enk = new_enk.to_string(); }
-    if !new_sek.is_empty() { current.zpw_sek = new_sek.to_string(); }
-    else if current.zpw_sek.is_empty() {
+    if !new_dkey.is_empty() {
+        current.uin = new_dkey.to_string();
+    }
+    if !new_enk.is_empty() {
+        current.zpw_enk = new_enk.to_string();
+    }
+    if !new_sek.is_empty() {
+        current.zpw_sek = new_sek.to_string();
+    } else if current.zpw_sek.is_empty() {
         if let Some(ref sek) = s.zpw_sek {
             current.zpw_sek = sek.clone();
         }
     }
-    if !new_name.is_empty() { current.display_name = new_name.to_string(); }
-    if !new_send2me_id.is_empty() { current.send2me_id = new_send2me_id.to_string(); }
+    if !new_name.is_empty() {
+        current.display_name = new_name.to_string();
+    }
+    if !new_send2me_id.is_empty() {
+        current.send2me_id = new_send2me_id.to_string();
+    }
 
     s.login = Some(current);
 

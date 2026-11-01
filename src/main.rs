@@ -57,7 +57,9 @@ async fn main() -> Result<()> {
             let _ = f.write_all(msg.as_bytes());
         }
     }));
-    let dev_mode = args.iter().any(|a| a == "--dev" || a == "-v" || a == "--verbose");
+    let dev_mode = args
+        .iter()
+        .any(|a| a == "--dev" || a == "-v" || a == "--verbose");
     let dump = args.iter().any(|a| a == "-d" || a == "--dump");
     let dump_raw = args.iter().any(|a| a == "--dump-raw");
     let force_tui = args.iter().any(|a| a == "--tui");
@@ -77,7 +79,9 @@ async fn main() -> Result<()> {
     logger::init(dev_mode);
 
     if dev_mode {
-        println!("🔧 [DEV MODE ACTIVATED] – Quét log, chẩn đoán giao thức và trace chi tiết được bật.");
+        println!(
+            "🔧 [DEV MODE ACTIVATED] – Quét log, chẩn đoán giao thức và trace chi tiết được bật."
+        );
     } else {
         println!("🔒 [PRODUCTION MODE] – Toàn bộ nhật ký và dev inspector được ẩn.");
     }
@@ -88,8 +92,15 @@ async fn main() -> Result<()> {
     let session_restored = if !force_logout {
         if let Ok(_) = s.load_from_file("session.json") {
             if let Some(li) = &s.login {
-                let name = if li.display_name.is_empty() { "Zalo User" } else { &li.display_name };
-                println!("✓ Đã khôi phục phiên từ session.json: {name} (UIN: {})", li.uin);
+                let name = if li.display_name.is_empty() {
+                    "Zalo User"
+                } else {
+                    &li.display_name
+                };
+                println!(
+                    "✓ Đã khôi phục phiên từ session.json: {name} (UIN: {})",
+                    li.uin
+                );
                 true
             } else {
                 false
@@ -150,7 +161,12 @@ async fn main() -> Result<()> {
             "ctdozlite",
             native_options,
             Box::new(move |cc| {
-                Ok(Box::new(gui::ZaloGuiApp::new(cc, app_session, dev_mode, initial_threads)))
+                Ok(Box::new(gui::ZaloGuiApp::new(
+                    cc,
+                    app_session,
+                    dev_mode,
+                    initial_threads,
+                )))
             }),
         )
         .map_err(|e| anyhow::anyhow!("Không thể khởi chạy GUI: {e}"));
@@ -166,7 +182,10 @@ async fn main() -> Result<()> {
             s.apply_server_info(d);
         }
         if dev_mode {
-            println!("✓ getServerInfo: chat {} • convers {}", s.domains.chat, s.domains.conversation);
+            println!(
+                "✓ getServerInfo: chat {} • convers {}",
+                s.domains.chat, s.domains.conversation
+            );
         }
     }
 
@@ -188,7 +207,9 @@ async fn main() -> Result<()> {
         match s.session_status().await {
             session::SessionStatus::Valid => server_ok = true,
             session::SessionStatus::Expired => {
-                println!("⚠️ Phiên đăng nhập đã hết hạn (máy chủ từ chối zpw_sek). Cần đăng nhập lại.");
+                println!(
+                    "⚠️ Phiên đăng nhập đã hết hạn (máy chủ từ chối zpw_sek). Cần đăng nhập lại."
+                );
                 // Keep every credential and only record the verdict; the file is not
                 // replaced until a fresh login succeeds.
                 s.mark_expired();
@@ -274,7 +295,9 @@ async fn main() -> Result<()> {
                     }
                 }
                 let mut poll_state = chat::PollState::default();
-                if let Err(e) = chat::poll_new_messages(&s, &mut poll_state, &mut initial_threads).await {
+                if let Err(e) =
+                    chat::poll_new_messages(&s, &mut poll_state, &mut initial_threads).await
+                {
                     crate::logger::log_error("main::poll_new_messages", &e.to_string());
                     eprintln!("! Lỗi tải tin nhắn gần nhất: {e}");
                 }

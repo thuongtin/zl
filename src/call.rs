@@ -117,7 +117,7 @@ pub fn decrypt_pipe_frame(hex_cipher: &str) -> Result<String> {
     if trimmed.is_empty() {
         bail!("empty pipe frame");
     }
-    if trimmed.len() % 2 != 0 {
+    if !trimmed.len().is_multiple_of(2) {
         bail!("odd hex length in pipe frame: {}", trimmed.len());
     }
     let mut raw = Vec::with_capacity(trimmed.len() / 2);
@@ -979,7 +979,7 @@ pub async fn poll_voip_controls(s: &Session, state: &mut CtrlPollState) -> Resul
     if is_initial_cursor {
         // First poll with cursor "1" syncs `lastActionId`, but preserve any fresh (< 45s) incoming
         // `request` / `group_request` invite so a call ringing right as the app opens is not dropped.
-        let now_ms = (crate::login::unix_now() * 1000) as i64;
+        let now_ms = crate::login::unix_now() * 1000;
         let fresh_invites: Vec<Value> = extract_voip_controls(data_node)
             .into_iter()
             .filter(|ev| {
@@ -1117,6 +1117,8 @@ pub fn uid_str_to_u32(uid: &str) -> u32 {
 }
 
 /// Build the binary 21-byte common ZRTP UDP request header (`0x00892F43` in `ZaloCall.exe`).
+// Keep the field order explicit to mirror the fixed binary wire header.
+#[allow(clippy::too_many_arguments)]
 fn write_zrtp_common_header(
     buf: &mut Vec<u8>,
     payload_type: u8,
@@ -1289,7 +1291,9 @@ pub struct ZrtpProbeResult {
 ///   - `29..33`: `token: u32 LE` (`[esi+0x14]`)
 ///   - `33..35` (when `sub_cmd == 2`): `addr_len: u16 LE`
 ///   - `35..35+addr_len`: UTF-8 `"public_ip|public_port"` (or `"public_ip:public_port"`)
-pub fn parse_zrtp_init_response(buf: &[u8]) -> Option<(i32, u32, u32, Option<(String, u16)>)> {
+pub type ZrtpInitResponse = (i32, u32, u32, Option<(String, u16)>);
+
+pub fn parse_zrtp_init_response(buf: &[u8]) -> Option<ZrtpInitResponse> {
     if buf.len() < 25 || !matches!(buf[0], 0x01 | 0x02) || !matches!(buf[1], 0x7E | 0x7F) {
         return None;
     }
@@ -1912,10 +1916,8 @@ impl CallBridge {
                                     l.uin.is_empty() || !l.uin.chars().all(|c| c.is_ascii_digit())
                                 })
                                 .unwrap_or(false);
-                            if needs_uid {
-                                if s_lock.sync_profile_me().await.is_some() {
-                                    let _ = s_lock.save_to_file("session.json");
-                                }
+                            if needs_uid && s_lock.sync_profile_me().await.is_some() {
+                                let _ = s_lock.save_to_file("session.json");
                             }
                             s_lock.clone()
                         };
@@ -1924,7 +1926,7 @@ impl CallBridge {
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_millis() as i64)
                             .unwrap_or(1_700_000_000_000);
-                        let call_id = ((now_ms % 1_800_000_000) + 100_000_000) as i64;
+                        let call_id = (now_ms % 1_800_000_000) + 100_000_000;
 
                         let gui_tx_clone = gui_tx.clone();
                         let ctx_clone = egui_ctx.clone();
@@ -3042,17 +3044,15 @@ impl CallBridge {
                                     let _ = gui_tx.send(GuiEvent::StatusUpdate(
                                         "🟢 Người nhận đã bắt máy — Đang trong cuộc gọi".into(),
                                     ));
-                                } else if !st_check.is_caller && status == 5 {
-                                    continue;
-                                } else if st_check.is_caller
-                                    && status == 5
-                                    && st_check.started_at.elapsed()
-                                        < std::time::Duration::from_secs(8)
-                                    && !event_media_params(&data)
-                                        .get("extendData")
-                                        .and_then(Value::as_str)
-                                        .unwrap_or("")
-                                        .is_empty()
+                                } else if status == 5
+                                    && (!st_check.is_caller
+                                        || (st_check.started_at.elapsed()
+                                            < std::time::Duration::from_secs(8)
+                                            && !event_media_params(&data)
+                                                .get("extendData")
+                                                .and_then(Value::as_str)
+                                                .unwrap_or("")
+                                                .is_empty()))
                                 {
                                     continue;
                                 } else {
@@ -3071,9 +3071,7 @@ impl CallBridge {
                                     }
                                     let taken = guard.take();
                                     let reason = match status {
-                                        1 | 2 | 3 | 4 => {
-                                            "Người nhận đang bận hoặc đã từ chối cuộc gọi"
-                                        }
+                                        1..=4 => "Người nhận đang bận hoặc đã từ chối cuộc gọi",
                                         5 => "Kết nối thoại bị gián đoạn hoặc người nhận từ chối",
                                         _ => "Người nhận không trả lời cuộc gọi",
                                     };
@@ -3162,7 +3160,7 @@ impl CallBridge {
                                     v.as_i64()
                                         .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
                                 }) {
-                                    let now_ms = (crate::login::unix_now() * 1000) as i64;
+                                    let now_ms = crate::login::unix_now() * 1000;
                                     let ev_ms = if ev_ts < 10_000_000_000 {
                                         ev_ts * 1000
                                     } else {
@@ -3696,7 +3694,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
-        let call_id = ((now_ms % 1_800_000_000) + 100_000_000) as i64;
+        let call_id = (now_ms % 1_800_000_000) + 100_000_000;
         let req_401 = json!({
             "calleeId": partner_id,
             "callId": call_id,
@@ -3754,37 +3752,31 @@ mod tests {
         let start_wait = std::time::Instant::now();
         let mut buf = [0u8; 1500];
         while start_wait.elapsed() < std::time::Duration::from_millis(500) {
-            match tokio::time::timeout(
+            if let Ok(Ok((n, peer))) = tokio::time::timeout(
                 std::time::Duration::from_millis(80),
                 rtp_sock.recv_from(&mut buf),
             )
             .await
             {
-                Ok(Ok((n, peer))) => {
-                    println!(
-                        "[TRACE] Pre-416 RTP recv {} bytes from {}: {:02x?}",
-                        n,
-                        peer,
-                        &buf[..n.min(48)]
-                    );
-                }
-                _ => {}
+                println!(
+                    "[TRACE] Pre-416 RTP recv {} bytes from {}: {:02x?}",
+                    n,
+                    peer,
+                    &buf[..n.min(48)]
+                );
             }
-            match tokio::time::timeout(
+            if let Ok(Ok((n, peer))) = tokio::time::timeout(
                 std::time::Duration::from_millis(40),
                 rtcp_sock.recv_from(&mut buf),
             )
             .await
             {
-                Ok(Ok((n, peer))) => {
-                    println!(
-                        "[TRACE] Pre-416 RTCP recv {} bytes from {}: {:02x?}",
-                        n,
-                        peer,
-                        &buf[..n.min(48)]
-                    );
-                }
-                _ => {}
+                println!(
+                    "[TRACE] Pre-416 RTCP recv {} bytes from {}: {:02x?}",
+                    n,
+                    peer,
+                    &buf[..n.min(48)]
+                );
             }
         }
 

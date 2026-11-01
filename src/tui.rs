@@ -144,7 +144,7 @@ enum BgEvent {
     },
     AttachmentSent {
         thread_id: String,
-        msg: ChatMessage,
+        msg: Box<ChatMessage>,
     },
     StickerSent {
         thread_id: String,
@@ -764,7 +764,7 @@ impl<'a> TuiApp<'a> {
                 Ok((_resp, msg)) => {
                     let _ = tx.send(BgEvent::AttachmentSent {
                         thread_id: to_id,
-                        msg,
+                        msg: Box::new(msg),
                     });
                 }
                 Err(e) => {
@@ -986,13 +986,8 @@ impl<'a> TuiApp<'a> {
                 self.status = "Đã đăng xuất. Bấm 'q' để thoát.".into();
             }
             ConfirmKind::WipeLocalData => {
-                // History only: the session and the thread list stay usable (#21).
-                let _ = std::fs::remove_file("zalo_history.db");
-                let _ = std::fs::remove_file("threads_cache.json");
-                for t in self.threads.iter_mut() {
-                    t.messages.clear();
-                }
-                self.status = "Đã xoá dữ liệu tin nhắn cục bộ (session giữ nguyên).".into();
+                // The custom channel keeps account-scoped history until an atomic wipe is available.
+                self.status = "Chức năng xóa dữ liệu chưa hỗ trợ kho lịch sử cá nhân".into();
             }
             ConfirmKind::DeleteMessage => {
                 let thread_id = action.thread_id;
@@ -1334,7 +1329,7 @@ impl<'a> TuiApp<'a> {
                                 && !m.id.is_empty()
                                 && !m.id.starts_with("local_")
                                 && !prev_ids.contains(&m.id)
-                                && !(*prev_max_ts > 0 && m.ts > 0 && m.ts <= *prev_max_ts)
+                                && (*prev_max_ts <= 0 || m.ts <= 0 || m.ts > *prev_max_ts)
                         })
                         .count();
                     if fresh > 0 && current_id.as_deref() != Some(t.id.as_str()) {
@@ -1427,6 +1422,7 @@ impl<'a> TuiApp<'a> {
                     self.status = "Đã gửi tin nhắn".into();
                 }
                 BgEvent::AttachmentSent { thread_id, msg } => {
+                    let msg = *msg;
                     let mut appended = false;
                     if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                         if !t.messages.iter().any(|m| m.id == msg.id) {
@@ -1818,7 +1814,7 @@ fn ui_draw(f: &mut Frame, app: &mut TuiApp<'_>) {
     app.chat_view_h = inner_h;
 
     let pct = if lines.len() <= inner_h {
-        format!("100%")
+        "100%".to_string()
     } else {
         format!(
             "{}%",
@@ -2225,79 +2221,74 @@ fn render_help(f: &mut Frame, area: Rect) {
     let modal_area = centered_rect(80, 80, area);
     f.render_widget(Clear, modal_area);
 
-    let mut content: Vec<Line<'static>> = Vec::new();
-    content.push(Line::from(Span::styled(
-        "=== PHÍM TẮT ZALO TUI ===",
-        Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
-    )));
-    content.push(Line::raw(""));
-    content.push(help_line(
-        "Tab / BackTab",
-        "Chuyển vùng: Danh sách -> Tin nhắn -> Soạn tin",
-    ));
-    content.push(help_line("F1 / ?", "Mở trợ giúp này"));
-    content.push(help_line("q / Ctrl+C", "Thoát (q chỉ khi không gõ tin)"));
-    content.push(Line::raw(""));
-    content.push(Line::from(Span::styled(
-        "-- Danh sách hội thoại --",
-        Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD),
-    )));
-    content.push(help_line(
-        "Up/Down j/k",
-        "Chọn hội thoại (cuộn chuột cũng được)",
-    ));
-    content.push(help_line("PgUp/PgDn", "Nhảy 10 hội thoại"));
-    content.push(help_line("Home / End", "Hội thoại đầu / cuối"));
-    content.push(help_line("/", "Tìm theo tên, ID, nội dung, tin nhắn"));
-    content.push(help_line("f", "Lọc: Tất cả -> Cá nhân -> Nhóm"));
-    content.push(help_line("u", "Xoá tất cả thông báo chưa đọc"));
-    content.push(help_line("r", "Làm mới danh sách từ server (nên)"));
-    content.push(help_line("h", "Tải lịch sử nhóm (50 tin)"));
-    content.push(help_line("x", "Đăng xuất (có xác nhận)"));
-    content.push(help_line("w", "Xoá lịch sử tin nhắn cục bộ (có xác nhận)"));
-    content.push(Line::raw(""));
-    content.push(Line::from(Span::styled(
-        "-- Tin nhắn --",
-        Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD),
-    )));
-    content.push(help_line("Up/Down j/k", "Chọn tin nhắn"));
-    content.push(help_line("PgUp/PgDn", "Cuộn nhanh"));
-    content.push(help_line("Home / End", "Đầu / cuối hội thoại"));
-    content.push(help_line(
-        "1 .. 6",
-        "Thả cảm xúc nhanh (Thích, Yêu, Haha, Wow, Buồn, Phẫn nộ)",
-    ));
-    content.push(help_line("y", "Trả lời tin đang chọn"));
-    content.push(help_line("d", "Xoá tin nhắn (chỉ phía bạn)"));
-    content.push(help_line("o", "Mở liên kết của tin nhắn"));
-    content.push(Line::raw(""));
-    content.push(Line::from(Span::styled(
-        "-- Soạn tin / đính kèm --",
-        Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD),
-    )));
-    content.push(help_line("Enter", "Gửi tin nhắn"));
-    content.push(help_line("Ctrl+U", "Xoá toàn bộ ô soạn"));
-    content.push(help_line("Ctrl+X", "Huỷ trả lời"));
-    content.push(help_line("Esc", "Lùi về vùng trước"));
-    content.push(help_line(
-        "F2",
-        "Kho nhãn dán: Enter chọn bộ, Enter lần 2 để gửi",
-    ));
-    content.push(help_line("F3", "Gửi tệp đính kèm bằng đường dẫn"));
-    content.push(help_line("l", "Dev log inspector (chỉ chế độ --dev)"));
-    content.push(Line::raw(""));
-    content.push(Line::from(Span::styled(
-        "Esc hoặc F1 để đóng trợ giúp.",
-        Style::default().fg(Color::DarkGray),
-    )));
+    let content: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            "=== PHÍM TẮT ZALO TUI ===",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::raw(""),
+        help_line(
+            "Tab / BackTab",
+            "Chuyển vùng: Danh sách -> Tin nhắn -> Soạn tin",
+        ),
+        help_line("F1 / ?", "Mở trợ giúp này"),
+        help_line("q / Ctrl+C", "Thoát (q chỉ khi không gõ tin)"),
+        Line::raw(""),
+        Line::from(Span::styled(
+            "-- Danh sách hội thoại --",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )),
+        help_line("Up/Down j/k", "Chọn hội thoại (cuộn chuột cũng được)"),
+        help_line("PgUp/PgDn", "Nhảy 10 hội thoại"),
+        help_line("Home / End", "Hội thoại đầu / cuối"),
+        help_line("/", "Tìm theo tên, ID, nội dung, tin nhắn"),
+        help_line("f", "Lọc: Tất cả -> Cá nhân -> Nhóm"),
+        help_line("u", "Xoá tất cả thông báo chưa đọc"),
+        help_line("r", "Làm mới danh sách từ server (nên)"),
+        help_line("h", "Tải lịch sử nhóm (50 tin)"),
+        help_line("x", "Đăng xuất (có xác nhận)"),
+        help_line("w", "Xoá lịch sử tin nhắn cục bộ (có xác nhận)"),
+        Line::raw(""),
+        Line::from(Span::styled(
+            "-- Tin nhắn --",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )),
+        help_line("Up/Down j/k", "Chọn tin nhắn"),
+        help_line("PgUp/PgDn", "Cuộn nhanh"),
+        help_line("Home / End", "Đầu / cuối hội thoại"),
+        help_line(
+            "1 .. 6",
+            "Thả cảm xúc nhanh (Thích, Yêu, Haha, Wow, Buồn, Phẫn nộ)",
+        ),
+        help_line("y", "Trả lời tin đang chọn"),
+        help_line("d", "Xoá tin nhắn (chỉ phía bạn)"),
+        help_line("o", "Mở liên kết của tin nhắn"),
+        Line::raw(""),
+        Line::from(Span::styled(
+            "-- Soạn tin / đính kèm --",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )),
+        help_line("Enter", "Gửi tin nhắn"),
+        help_line("Ctrl+U", "Xoá toàn bộ ô soạn"),
+        help_line("Ctrl+X", "Huỷ trả lời"),
+        help_line("Esc", "Lùi về vùng trước"),
+        help_line("F2", "Kho nhãn dán: Enter chọn bộ, Enter lần 2 để gửi"),
+        help_line("F3", "Gửi tệp đính kèm bằng đường dẫn"),
+        help_line("l", "Dev log inspector (chỉ chế độ --dev)"),
+        Line::raw(""),
+        Line::from(Span::styled(
+            "Esc hoặc F1 để đóng trợ giúp.",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
 
     let block = Block::default()
         .title(" Trợ giúp (Esc/F1 để đóng) ")

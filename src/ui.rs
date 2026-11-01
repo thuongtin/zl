@@ -47,7 +47,6 @@ pub fn prompt_password(label: &str) -> Result<String> {
     Ok(s.trim_end_matches(['\r', '\n']).to_string())
 }
 
-/// Return the current time in the operating system timezone.
 pub fn clock() -> String {
     crate::clock::now_clock()
 }

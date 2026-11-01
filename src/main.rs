@@ -25,6 +25,7 @@ mod store;
 mod tui;
 mod ui;
 mod unread;
+mod updater;
 mod voip_log;
 
 use anyhow::Result;
@@ -143,21 +144,23 @@ async fn main() -> Result<()> {
             .with_decorations(false)
             .with_inner_size([1020.0, 700.0])
             .with_min_inner_size([480.0, 360.0])
-            .with_title("ctdozlite");
+            .with_title("ctdozlite")
+            .with_active(false);
         if let Some(icon) = gui::load_app_icon() {
             viewport = viewport.with_icon(std::sync::Arc::new(icon));
         }
         let native_options = eframe::NativeOptions {
             viewport,
+            #[cfg(target_os = "macos")]
+            event_loop_builder: Some(Box::new(|builder| {
+                use winit::platform::macos::EventLoopBuilderExtMacOS;
+                // Respect background launch and never override another application's focus.
+                builder.with_activate_ignoring_other_apps(false);
+            })),
             ..Default::default()
         };
 
-        let mut initial_threads = chat::load_threads_cache();
-        store::load_history_into_threads(
-            "zalo_history.db",
-            &mut initial_threads,
-            store::MessageStore::PRELOAD_MSGS,
-        );
+        let initial_threads = Vec::new();
 
         let app_session = s;
         let res = eframe::run_native(
@@ -173,10 +176,14 @@ async fn main() -> Result<()> {
             }),
         )
         .map_err(|e| anyhow::anyhow!("Không thể khởi chạy GUI: {e}"));
-        if res.is_ok() {
-            std::process::exit(0);
+        let joined = gui::join_worker_after_close();
+        if res.is_err() || joined.is_err() {
+            gui::abort_pending_update();
         }
-        return res;
+        res?;
+        joined.map_err(anyhow::Error::msg)?;
+        gui::launch_pending_update().map_err(anyhow::Error::msg)?;
+        return Ok(());
     }
 
     // 1. Initial server info check for TUI mode

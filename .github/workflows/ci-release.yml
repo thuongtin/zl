@@ -328,6 +328,15 @@ jobs:
             mkdir -p "$stage_dir/ctdozlite.app/Contents/Resources"
             cp "$bin_path" "$stage_dir/ctdozlite.app/Contents/MacOS/ctdozlite"
             chmod +x "$stage_dir/ctdozlite.app/Contents/MacOS/ctdozlite"
+            case "$bin_path" in
+              target/aarch64-*) swift_targets="arm64-apple-macosx11.0" ;;
+              target/x86_64-*) swift_targets="x86_64-apple-macosx11.0" ;;
+              *) swift_targets="arm64-apple-macosx11.0,x86_64-apple-macosx11.0" ;;
+            esac
+            # Public builds deliberately omit externally licensed codec JS/WASM.
+            env -u HISTORY_CODEC_ASSETS SWIFT_TARGETS="$swift_targets" bash native/macos/build-native-helpers.sh "$stage_dir/ctdozlite.app"
+            helper_arches="$(lipo -archs "$bin_path" | xargs | tr ' ' ',')"
+            python3 packaging/macos/validate-native-bundle.py "$stage_dir/ctdozlite.app" --arches "$helper_arches"
             cp packaging/macos/Info.plist "$stage_dir/ctdozlite.app/Contents/Info.plist"
             plutil -replace CFBundleShortVersionString -string "$VER" "$stage_dir/ctdozlite.app/Contents/Info.plist"
             printf 'APPL????' > "$stage_dir/ctdozlite.app/Contents/PkgInfo"
@@ -335,7 +344,9 @@ jobs:
               cp build_icon/AppIcon.icns "$stage_dir/ctdozlite.app/Contents/Resources/AppIcon.icns"
             fi
             xattr -cr "$stage_dir/ctdozlite.app" || true
+            codesign --force --sign - "$stage_dir/ctdozlite.app/Contents/Helpers/DailyNotifier.app"
             codesign --force --deep --sign - "$stage_dir/ctdozlite.app"
+            codesign --verify --deep --strict "$stage_dir/ctdozlite.app"
             ln -s /Applications "$stage_dir/Applications"
 
             for attempt in 1 2 3 4 5; do
@@ -353,6 +364,7 @@ jobs:
           package_dmg "target/aarch64-apple-darwin/release/ctdozlite" "dist/ctdozlite-${VER}-macos-arm64.dmg" "ctdozlite (Apple Silicon)"
           package_dmg "target/x86_64-apple-darwin/release/ctdozlite" "dist/ctdozlite-${VER}-macos-x86_64.dmg" "ctdozlite (Intel)"
           package_dmg "target/universal-apple-darwin/release/ctdozlite" "dist/ctdozlite-${VER}-macos.dmg" "ctdozlite"
+          python3 tests/native_packaging.py
           ls -lh dist/*.dmg
       - uses: actions/upload-artifact@v4
         with:

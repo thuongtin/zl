@@ -35,6 +35,6 @@ What we will do, in one paragraph, present tense.
 
 | ADR | Title | Status |
 | :--- | :--- | :--- |
-| — | No decisions recorded yet | — |
+| [0001](0001-account-scoped-chat-state.md) | Account-scoped chat state | proposed |
 
 Related domain language lives in [`/GLOSSARY.md`](../../GLOSSARY.md).

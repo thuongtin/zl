@@ -451,18 +451,6 @@ pub const REACTION_LIST: [(&str, &str, &str); 6] = [
     ("😠", "rage", "Phẫn nộ"),
 ];
 
-pub fn emoji_to_tex_key(emoji: &str) -> &'static str {
-    match emoji {
-        "👍" | "/-strong" => "like",
-        "❤️" | "❤" | "/-heart" => "heart",
-        "😆" | ":>" => "smile",
-        "😮" | ":o" => "surprised",
-        "😢" | ":-(( " | ":-((" => "cry",
-        "😠" | ":-h" => "rage",
-        _ => "like",
-    }
-}
-
 pub(super) const APP_ICON_PNG: &[u8] = include_bytes!("../assets/app_icon.png");
 
 /// Decode the embedded 256x256 RGBA application icon for the OS window/taskbar (`ViewportBuilder::with_icon`).

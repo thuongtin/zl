@@ -12,7 +12,6 @@ impl ZaloGuiApp {
 
         let mut close_menu = false;
         let mut do_logout = false;
-        let mut do_wipe = false;
         let area_resp = egui::Area::new(Id::new("left_rail_profile_popover"))
             .order(egui::Order::Foreground)
             .fixed_pos(Pos2::new(68.0, 44.0))
@@ -173,26 +172,15 @@ impl ZaloGuiApp {
                         ui.separator();
                         ui.add_space(4.0);
 
-                        if ui
-                            .add_sized(
-                                [200.0, 30.0],
-                                egui::Button::new(
-                                    RichText::new("Xoá dữ liệu tin nhắn cục bộ")
-                                        .size(12.0)
-                                        .color(pal.text_secondary),
-                                )
-                                .fill(pal.bg_input)
-                                .stroke(Stroke::new(1.0_f32, pal.border))
-                                .rounding(Rounding::same(7.0)),
-                            )
-                            .on_hover_text(
-                                "Xoá zalo_history.db và threads_cache.json. Phiên đăng nhập giữ nguyên.",
-                            )
-                            .on_hover_cursor(CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            do_wipe = true;
-                            close_menu = true;
+                        if ui.button("Xoá dữ liệu tin nhắn cục bộ").clicked() { self.confirm_local_wipe = true; }
+                        if self.confirm_local_wipe {
+                            ui.label("Xóa lịch sử và tệp đệm của tài khoản này? Phiên đăng nhập vẫn giữ nguyên.");
+                            if ui.button("Xác nhận xóa dữ liệu").clicked() {
+                                if let Some(tx) = WORKER_TX.get() {
+                                    if tx.send(WorkerCmd::WipeLocalData).is_ok() { self.confirm_local_wipe = false; self.wipe_pending = true; close_menu = true; }
+                                }
+                            }
+                            if ui.button("Hủy").clicked() { self.confirm_local_wipe = false; }
                         }
                         ui.add_space(4.0);
                         ui.separator();
@@ -237,7 +225,6 @@ impl ZaloGuiApp {
                         {
                             self.allow_quit = true;
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            std::process::exit(0);
                         }
                     });
             });
@@ -262,16 +249,11 @@ impl ZaloGuiApp {
             self.login_status_msg.clear();
             self.qr_status = "Đang xin mã QR mới…".into();
             self.status_msg = "Đã đăng xuất".into();
-            // `WorkerCmd::Logout` owns the file side: it removes `session.json` and
-            // `threads_cache.json` but keeps `zalo_history.db` (#21).
+            // The worker serializes logout cleanup after any in-flight disk write.
             if let Some(tx) = WORKER_TX.get() {
                 let _ = tx.send(WorkerCmd::Logout);
                 let _ = tx.send(WorkerCmd::RequestQr);
             }
-        }
-        if do_wipe {
-            // Destructive and irreversible, so it asks first.
-            self.confirm_local_wipe = true;
         }
         if close_menu {
             self.profile_menu_open = false;
@@ -649,92 +631,18 @@ impl ZaloGuiApp {
     }
     pub(super) fn render_settings_modal(&mut self, ctx: &egui::Context, pal: &ThemePalette) {
         if !self.settings_modal_open {
-            self.settings_blur_tex = None;
-            self.settings_blur_req_at = None;
             return;
         }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.settings_modal_open = false;
-            self.settings_blur_tex = None;
-            self.settings_blur_req_at = None;
             self.settings.save();
             return;
-        }
-
-        // Capture & blur the underlying app viewport so the background is genuinely Gaussian-blurred
-        let captured_shot = ctx.input(|i| {
-            for ev in &i.events {
-                if let egui::Event::Screenshot { image, .. } = ev {
-                    return Some(image.clone());
-                }
-            }
-            None
-        });
-        if let Some(shot) = captured_shot {
-            if self.settings_blur_tex.is_none() {
-                let blurred = build_blurred_backdrop_image(&shot, pal.is_dark);
-                self.settings_blur_tex = Some(ctx.load_texture(
-                    "settings_frosted_backdrop_tex",
-                    blurred,
-                    TextureOptions::LINEAR,
-                ));
-            }
-        }
-        if self.settings_blur_tex.is_none() {
-            if self.settings_blur_req_at.is_none() {
-                self.settings_blur_req_at = Some(std::time::Instant::now());
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
-                ctx.request_repaint();
-                return;
-            } else if self
-                .settings_blur_req_at
-                .map(|t| t.elapsed() < Duration::from_millis(65))
-                .unwrap_or(false)
-            {
-                ctx.request_repaint();
-                return;
-            }
         }
 
         let mut open = true;
         let screen = ctx.screen_rect();
         let win_w = (screen.width() * 0.88).clamp(620.0, 780.0);
         let win_h = (screen.height() * 0.82).clamp(480.0, 600.0);
-        let modal_rect = Rect::from_center_size(screen.center(), Vec2::new(win_w, win_h));
-
-        // Full-screen blurred & dimmed backdrop behind the Settings modal (blocks background clicks)
-        egui::Area::new(Id::new("settings_modal_frosted_backdrop"))
-            .order(egui::Order::Middle)
-            .fixed_pos(screen.min)
-            .show(ctx, |ui| {
-                let (bg_rect, bg_resp) =
-                    ui.allocate_exact_size(screen.size(), Sense::click_and_drag());
-                if let Some(ref btex) = self.settings_blur_tex {
-                    ui.painter().image(
-                        btex.id(),
-                        bg_rect,
-                        Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-                        Color32::WHITE,
-                    );
-                } else {
-                    ui.painter().rect_filled(
-                        bg_rect,
-                        Rounding::ZERO,
-                        if pal.is_dark {
-                            Color32::from_rgba_unmultiplied(6, 9, 16, 224)
-                        } else {
-                            Color32::from_rgba_unmultiplied(15, 23, 42, 185)
-                        },
-                    );
-                }
-                if bg_resp.clicked() {
-                    if let Some(pos) = bg_resp.interact_pointer_pos() {
-                        if !modal_rect.contains(pos) {
-                            open = false;
-                        }
-                    }
-                }
-            });
 
         let mut theme_switched = false;
         let mut trigger_sync = false;
@@ -742,7 +650,6 @@ impl ZaloGuiApp {
         let mut open_dl_dir = false;
 
         egui::Window::new("settings_window_modal")
-            .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -751,23 +658,14 @@ impl ZaloGuiApp {
             .frame(
                 egui::Frame::none()
                     .fill(pal.bg_chat_canvas)
-                    .stroke(Stroke::new(1.2_f32, pal.border))
+                    .stroke(Stroke::new(1.0_f32, pal.border))
                     .rounding(Rounding::same(12.0))
-                    .shadow(egui::epaint::Shadow {
-                        offset: Vec2::new(0.0, 14.0),
-                        blur: 40.0,
-                        spread: 6.0,
-                        color: Color32::from_black_alpha(160),
-                    })
                     .inner_margin(Margin::ZERO),
             )
             .show(ctx, |ui| {
-                ui.visuals_mut().widgets.inactive.bg_stroke =
-                    Stroke::new(1.4_f32, pal.text_muted);
-                ui.visuals_mut().widgets.hovered.bg_stroke =
-                    Stroke::new(1.6_f32, pal.primary_hover);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
+
                     // Left Tabs Navigation Sidebar (200px)
                     egui::Frame::none()
                         .fill(pal.bg_sidebar)
@@ -795,6 +693,7 @@ impl ZaloGuiApp {
                                     (SettingsTab::Utilities, lucide::SLIDERS, "Tiện ích"),
                                     (SettingsTab::Update, lucide::SPARKLES, "Cập nhật"),
                                 ];
+
                                 for (tab, icon, title) in tabs {
                                     let is_active = self.settings_tab == tab;
                                     let text_col = if is_active {
@@ -851,97 +750,88 @@ impl ZaloGuiApp {
                         });
 
                     // Right Content Panel
-                    let content_w = (win_w - 268.0).max(350.0);
+                    let content_w = win_w - 220.0;
                     egui::Frame::none()
                         .fill(pal.bg_chat_canvas)
                         .inner_margin(Margin::symmetric(24.0, 16.0))
                         .show(ui, |ui| {
-                            ui.vertical(|ui| {
-                                ui.set_min_width(content_w);
-                                ui.set_max_width(content_w);
-                                ui.set_height(win_h - 32.0);
+                            ui.set_width(content_w);
+                            ui.set_height(win_h - 32.0);
 
-                                ui.horizontal(|ui| {
-                                    let tab_title = match self.settings_tab {
-                                        SettingsTab::General => "Cài đặt chung",
-                                        SettingsTab::Privacy => "Quyền riêng tư",
-                                        SettingsTab::Sync => "Đồng bộ tin nhắn",
-                                        SettingsTab::Appearance => "Cài đặt giao diện",
-                                        SettingsTab::Notifications => "Cài đặt thông báo",
-                                        SettingsTab::Messages => "Cài đặt tin nhắn",
-                                        SettingsTab::Utilities => "Tiện ích & Gợi ý",
+                            ui.horizontal(|ui| {
+                                let tab_title = match self.settings_tab {
+                                    SettingsTab::General => "Cài đặt chung",
+                                    SettingsTab::Privacy => "Quyền riêng tư",
+                                    SettingsTab::Sync => "Đồng bộ tin nhắn",
+                                    SettingsTab::Appearance => "Cài đặt giao diện",
+                                    SettingsTab::Notifications => "Cài đặt thông báo",
+                                    SettingsTab::Messages => "Cài đặt tin nhắn",
+                                    SettingsTab::Utilities => "Tiện ích & Gợi ý",
                                         SettingsTab::Update => "Cập nhật phần mềm",
-                                    };
-                                    ui.label(
-                                        RichText::new(tab_title)
-                                            .size(15.5)
-                                            .color(pal.text_primary)
-                                            .strong(),
+                                };
+                                ui.label(
+                                    RichText::new(tab_title)
+                                        .size(15.5)
+                                        .color(pal.text_primary)
+                                        .strong(),
+                                );
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    let (cr, c_resp) = ui.allocate_exact_size(
+                                        Vec2::splat(26.0),
+                                        Sense::click(),
                                     );
-                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        let (cr, c_resp) = ui.allocate_exact_size(
-                                            Vec2::splat(26.0),
-                                            Sense::click(),
+                                    if c_resp.hovered() {
+                                        ui.painter().rect_filled(
+                                            cr,
+                                            Rounding::same(6.0),
+                                            pal.bg_hover,
                                         );
+                                    }
+                                    draw_lucide_icon(
+                                        ui.painter(),
+                                        cr.center(),
+                                        lucide::X,
+                                        14.0,
                                         if c_resp.hovered() {
-                                            ui.painter().rect_filled(
-                                                cr,
-                                                Rounding::same(6.0),
-                                                pal.bg_hover,
-                                            );
-                                        }
-                                        draw_lucide_icon(
-                                            ui.painter(),
-                                            cr.center(),
-                                            lucide::X,
-                                            14.0,
-                                            if c_resp.hovered() {
-                                                pal.text_primary
-                                            } else {
-                                                pal.text_secondary
-                                            },
-                                        );
-                                        if c_resp
-                                            .on_hover_cursor(CursorIcon::PointingHand)
-                                            .clicked()
-                                        {
-                                            open = false;
-                                        }
-                                    });
+                                            pal.text_primary
+                                        } else {
+                                            pal.text_secondary
+                                        },
+                                    );
+                                    if c_resp
+                                        .on_hover_cursor(CursorIcon::PointingHand)
+                                        .clicked()
+                                    {
+                                        open = false;
+                                    }
                                 });
+                            });
 
-                                ui.add_space(8.0);
-                                ui.separator();
-                                ui.add_space(8.0);
+                            ui.add_space(8.0);
+                            ui.separator();
+                            ui.add_space(8.0);
 
-                                let inner_w = (content_w - 8.0).max(320.0);
-                                egui::ScrollArea::vertical()
-                                    .max_width(content_w)
-                                    .max_height((win_h - 86.0).max(240.0))
-                                    .auto_shrink([false, false])
-                                    .show(ui, |ui| {
-                                        ui.vertical(|ui| {
-                                            ui.set_min_width(inner_w);
-                                            ui.set_max_width(inner_w);
-                                            match self.settings_tab {
-                                                SettingsTab::General => {
-                                                    ui.label(RichText::new("Danh bạ").color(pal.text_primary).size(13.5).strong());
-                                                    ui.add_space(2.0);
-                                                    ui.label(RichText::new("Hiển thị danh bạ trong Zalo, bạn có thể chọn hiển thị tất cả danh bạ hoặc chỉ những bạn bè đang sử dụng Zalo").color(pal.text_secondary).size(12.0));
-                                                    ui.add_space(6.0);
-                                                    egui::Frame::none()
-                                                        .fill(pal.bg_elevated)
-                                                        .stroke(Stroke::new(1.0_f32, pal.border))
-                                                        .rounding(Rounding::same(8.0))
-                                                        .inner_margin(Margin::symmetric(14.0, 10.0))
-                                                        .show(ui, |ui| {
-                                                            ui.vertical(|ui| {
-                                                                ui.set_min_width(inner_w - 28.0);
-                                                                ui.radio_value(&mut self.settings.show_all_contacts, true, "Hiển thị tất cả danh bạ");
-                                                                ui.add_space(4.0);
-                                                                ui.radio_value(&mut self.settings.show_all_contacts, false, "Chỉ hiển thị bạn bè đang sử dụng Zalo");
-                                                            });
-                                                        });
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    match self.settings_tab {
+                                        SettingsTab::General => {
+                                            ui.label(RichText::new("Danh bạ").color(pal.text_primary).size(13.5).strong());
+                                            ui.add_space(2.0);
+                                            ui.label(RichText::new("Hiển thị danh bạ trong Zalo, bạn có thể chọn hiển thị tất cả danh bạ hoặc chỉ những bạn bè đang sử dụng Zalo").color(pal.text_secondary).size(12.0));
+                                            ui.add_space(6.0);
+                                            egui::Frame::none()
+                                                .fill(pal.bg_elevated)
+                                                .stroke(Stroke::new(1.0_f32, pal.border))
+                                                .rounding(Rounding::same(8.0))
+                                                .inner_margin(Margin::symmetric(14.0, 10.0))
+                                                .show(ui, |ui| {
+                                                    ui.set_min_width(ui.available_width());
+                                                    ui.radio_value(&mut self.settings.show_all_contacts, true, "Hiển thị tất cả danh bạ");
+                                                    ui.add_space(4.0);
+                                                    ui.radio_value(&mut self.settings.show_all_contacts, false, "Chỉ hiển thị bạn bè đang sử dụng Zalo");
+                                                });
+                                            ui.add_space(14.0);
 
                                             ui.label(RichText::new("Ngôn ngữ").color(pal.text_primary).size(13.5).strong());
                                             ui.add_space(6.0);
@@ -1214,173 +1104,54 @@ impl ZaloGuiApp {
                                                 .rounding(Rounding::same(10.0))
                                                 .inner_margin(Margin::symmetric(18.0, 16.0))
                                                 .show(ui, |ui| {
-                                                    let card_avail_w = (inner_w - 36.0).max(300.0);
-                                                    ui.set_min_width(card_avail_w);
-                                                    ui.set_max_width(card_avail_w);
                                                     ui.horizontal(|ui| {
-                                                        let col_w = 132.0_f32;
-                                                        let gap = 18.0_f32;
-                                                        let total_w = col_w * 3.0 + gap * 2.0;
-                                                        let left_pad =
-                                                            ((card_avail_w - total_w) * 0.5).max(0.0);
-                                                        if left_pad > 0.0 {
-                                                            ui.add_space(left_pad);
-                                                        }
-                                                        ui.spacing_mut().item_spacing.x = gap;
+                                                        ui.spacing_mut().item_spacing.x = 18.0;
                                                         for (mode_key, label, is_dark_val) in [
                                                             ("light", "Sáng", false),
                                                             ("dark", "Tối", true),
                                                             ("system", "Hệ Thống", true),
                                                         ] {
-                                                            let selected =
-                                                                self.settings.theme_mode == mode_key;
-                                                            ui.allocate_ui_with_layout(
-                                                                Vec2::new(col_w, 114.0),
-                                                                Layout::top_down(Align::Center),
-                                                                |ui| {
-                                                                    let (card_r, c_resp) =
-                                                                        ui.allocate_exact_size(
-                                                                            Vec2::new(132.0, 84.0),
-                                                                            Sense::click(),
-                                                                        );
-                                                                    let stroke_col = if selected {
-                                                                        pal.primary_hover
-                                                                    } else if c_resp.hovered() {
-                                                                        pal.text_secondary
-                                                                    } else {
-                                                                        pal.border
-                                                                    };
-                                                                    if mode_key == "system" {
-                                                                        let left_half =
-                                                                            Rect::from_min_max(
-                                                                                card_r.min,
-                                                                                Pos2::new(
-                                                                                    card_r.center().x,
-                                                                                    card_r.max.y,
-                                                                                ),
-                                                                            );
-                                                                        let right_half =
-                                                                            Rect::from_min_max(
-                                                                                Pos2::new(
-                                                                                    card_r.center().x,
-                                                                                    card_r.min.y,
-                                                                                ),
-                                                                                card_r.max,
-                                                                            );
-                                                                        ui.painter().rect_filled(
-                                                                            left_half,
-                                                                            Rounding {
-                                                                                nw: 8.0,
-                                                                                sw: 8.0,
-                                                                                ne: 0.0,
-                                                                                se: 0.0,
-                                                                            },
-                                                                            Color32::from_rgb(
-                                                                                235, 242, 252,
-                                                                            ),
-                                                                        );
-                                                                        ui.painter().rect_filled(
-                                                                            right_half,
-                                                                            Rounding {
-                                                                                nw: 0.0,
-                                                                                sw: 0.0,
-                                                                                ne: 8.0,
-                                                                                se: 8.0,
-                                                                            },
-                                                                            Color32::from_rgb(
-                                                                                24, 26, 31,
-                                                                            ),
-                                                                        );
-                                                                    } else {
-                                                                        ui.painter().rect_filled(
-                                                                            card_r,
-                                                                            Rounding::same(8.0),
-                                                                            if is_dark_val {
-                                                                                Color32::from_rgb(
-                                                                                    24, 26, 31,
-                                                                                )
-                                                                            } else {
-                                                                                Color32::from_rgb(
-                                                                                    235, 242, 252,
-                                                                                )
-                                                                            },
-                                                                        );
-                                                                    }
-                                                                    ui.painter().rect_stroke(
+                                                            let selected = self.settings.theme_mode == mode_key;
+                                                            ui.vertical_centered(|ui| {
+                                                                let (card_r, c_resp) = ui.allocate_exact_size(Vec2::new(132.0, 84.0), Sense::click());
+                                                                let stroke_col = if selected {
+                                                                    pal.primary_hover
+                                                                } else if c_resp.hovered() {
+                                                                    pal.border
+                                                                } else {
+                                                                    pal.border.linear_multiply(0.6)
+                                                                };
+                                                                if mode_key == "system" {
+                                                                    let left_half = Rect::from_min_max(card_r.min, Pos2::new(card_r.center().x, card_r.max.y));
+                                                                    let right_half = Rect::from_min_max(Pos2::new(card_r.center().x, card_r.min.y), card_r.max);
+                                                                    ui.painter().rect_filled(left_half, Rounding { nw: 8.0, sw: 8.0, ne: 0.0, se: 0.0 }, Color32::from_rgb(235, 242, 252));
+                                                                    ui.painter().rect_filled(right_half, Rounding { nw: 0.0, sw: 0.0, ne: 8.0, se: 8.0 }, Color32::from_rgb(24, 26, 31));
+                                                                } else {
+                                                                    ui.painter().rect_filled(
                                                                         card_r,
                                                                         Rounding::same(8.0),
-                                                                        Stroke::new(
-                                                                            if selected {
-                                                                                2.0_f32
-                                                                            } else {
-                                                                                1.0_f32
-                                                                            },
-                                                                            stroke_col,
-                                                                        ),
-                                                                    );
-                                                                    ui.painter().circle_filled(
-                                                                        Pos2::new(
-                                                                            card_r.left() + 18.0,
-                                                                            card_r.top() + 22.0,
-                                                                        ),
-                                                                        5.5,
-                                                                        Color32::from_rgb(
-                                                                            82, 139, 255,
-                                                                        ),
-                                                                    );
-                                                                    let mock_in = Rect::from_min_size(
-                                                                        Pos2::new(
-                                                                            card_r.left() + 30.0,
-                                                                            card_r.top() + 15.0,
-                                                                        ),
-                                                                        Vec2::new(62.0, 22.0),
-                                                                    );
-                                                                    ui.painter().rect_filled(
-                                                                        mock_in,
-                                                                        Rounding::same(4.0),
-                                                                        if is_dark_val
-                                                                            && mode_key != "light"
-                                                                        {
-                                                                            Color32::from_rgb(
-                                                                                76, 82, 94,
-                                                                            )
+                                                                        if is_dark_val {
+                                                                            Color32::from_rgb(24, 26, 31)
                                                                         } else {
-                                                                            Color32::WHITE
+                                                                            Color32::from_rgb(235, 242, 252)
                                                                         },
                                                                     );
-                                                                    let mock_out =
-                                                                        Rect::from_min_size(
-                                                                            Pos2::new(
-                                                                                card_r.right() - 56.0,
-                                                                                card_r.bottom() - 28.0,
-                                                                            ),
-                                                                            Vec2::new(44.0, 18.0),
-                                                                        );
-                                                                    ui.painter().rect_filled(
-                                                                        mock_out,
-                                                                        Rounding::same(4.0),
-                                                                        Color32::from_rgb(
-                                                                            82, 139, 255,
-                                                                        ),
-                                                                    );
+                                                                }
+                                                                ui.painter().rect_stroke(card_r, Rounding::same(8.0), Stroke::new(if selected { 2.0_f32 } else { 1.0_f32 }, stroke_col));
+                                                                ui.painter().circle_filled(Pos2::new(card_r.left() + 18.0, card_r.top() + 22.0), 5.5, Color32::from_rgb(82, 139, 255));
+                                                                let mock_in = Rect::from_min_size(Pos2::new(card_r.left() + 30.0, card_r.top() + 15.0), Vec2::new(62.0, 22.0));
+                                                                ui.painter().rect_filled(mock_in, Rounding::same(4.0), if is_dark_val && mode_key != "light" { Color32::from_rgb(76, 82, 94) } else { Color32::WHITE });
+                                                                let mock_out = Rect::from_min_size(Pos2::new(card_r.right() - 56.0, card_r.bottom() - 28.0), Vec2::new(44.0, 18.0));
+                                                                ui.painter().rect_filled(mock_out, Rounding::same(4.0), Color32::from_rgb(82, 139, 255));
 
-                                                                    ui.add_space(6.0);
-                                                                    let r_clicked =
-                                                                        ui.radio(selected, label).clicked();
-                                                                    if c_resp
-                                                                        .on_hover_cursor(
-                                                                            CursorIcon::PointingHand,
-                                                                        )
-                                                                        .clicked()
-                                                                        || r_clicked
-                                                                    {
-                                                                        self.settings.theme_mode =
-                                                                            mode_key.into();
-                                                                        self.dark_mode = is_dark_val;
-                                                                        theme_switched = true;
-                                                                    }
-                                                                },
-                                                            );
+                                                                ui.add_space(6.0);
+                                                                let r_clicked = ui.radio(selected, label).clicked();
+                                                                if c_resp.on_hover_cursor(CursorIcon::PointingHand).clicked() || r_clicked {
+                                                                    self.settings.theme_mode = mode_key.into();
+                                                                    self.dark_mode = is_dark_val;
+                                                                    theme_switched = true;
+                                                                }
+                                                            });
                                                         }
                                                     });
                                                 });
@@ -1403,6 +1174,12 @@ impl ZaloGuiApp {
                                                 });
                                         }
                                         SettingsTab::Notifications => {
+                                            #[cfg(target_os = "macos")]
+                                            if ui.button("Kiểm tra quyền macOS").clicked() {
+                                                if let Some(tx) = WORKER_TX.get() {
+                                                    let _ = tx.send(WorkerCmd::RequestNotificationAuthorization);
+                                                }
+                                            }
                                             ui.label(RichText::new("Cài đặt thông báo").color(pal.text_primary).size(13.5).strong());
                                             ui.add_space(2.0);
                                             ui.label(RichText::new("Nhận được thông báo mỗi khi có tin nhắn mới").color(pal.text_secondary).size(12.2));
@@ -1413,102 +1190,36 @@ impl ZaloGuiApp {
                                                 .rounding(Rounding::same(10.0))
                                                 .inner_margin(Margin::symmetric(24.0, 16.0))
                                                 .show(ui, |ui| {
-                                                    let card_avail_w = (inner_w - 48.0).max(280.0);
-                                                    ui.set_min_width(card_avail_w);
-                                                    ui.set_max_width(card_avail_w);
                                                     ui.horizontal(|ui| {
-                                                        let col_w = 152.0_f32;
-                                                        let gap = 36.0_f32;
-                                                        let total_w = col_w * 2.0 + gap;
-                                                        let left_pad =
-                                                            ((card_avail_w - total_w) * 0.5).max(0.0);
-                                                        if left_pad > 0.0 {
-                                                            ui.add_space(left_pad);
-                                                        }
-                                                        ui.spacing_mut().item_spacing.x = gap;
-                                                        for (en_val, label) in
-                                                            [(true, "Bật"), (false, "Tắt")]
-                                                        {
-                                                            let selected = self
-                                                                .settings
-                                                                .enable_notifications
-                                                                == en_val;
-                                                            ui.allocate_ui_with_layout(
-                                                                Vec2::new(col_w, 122.0),
-                                                                Layout::top_down(Align::Center),
-                                                                |ui| {
-                                                                    let (lap_r, l_resp) =
-                                                                        ui.allocate_exact_size(
-                                                                            Vec2::new(148.0, 92.0),
-                                                                            Sense::click(),
-                                                                        );
-                                                                    let stroke_c = if selected {
-                                                                        pal.primary_hover
-                                                                    } else {
-                                                                        pal.border
-                                                                    };
-                                                                    let scr_r = Rect::from_min_max(
-                                                                        Pos2::new(
-                                                                            lap_r.left() + 14.0,
-                                                                            lap_r.top() + 6.0,
-                                                                        ),
-                                                                        Pos2::new(
-                                                                            lap_r.right() - 14.0,
-                                                                            lap_r.bottom() - 16.0,
-                                                                        ),
-                                                                    );
-                                                                    ui.painter().rect_stroke(
-                                                                        scr_r,
-                                                                        Rounding::same(4.0),
-                                                                        Stroke::new(1.8_f32, stroke_c),
-                                                                    );
-                                                                    let base_r = Rect::from_min_max(
-                                                                        Pos2::new(
-                                                                            lap_r.left() + 6.0,
-                                                                            lap_r.bottom() - 16.0,
-                                                                        ),
-                                                                        Pos2::new(
-                                                                            lap_r.right() - 6.0,
-                                                                            lap_r.bottom() - 6.0,
-                                                                        ),
-                                                                    );
-                                                                    ui.painter().rect_stroke(
-                                                                        base_r,
-                                                                        Rounding::same(4.0),
-                                                                        Stroke::new(1.8_f32, stroke_c),
-                                                                    );
+                                                        ui.spacing_mut().item_spacing.x = 28.0;
+                                                        for (en_val, label) in [(true, "Bật"), (false, "Tắt")] {
+                                                            let selected = self.settings.enable_notifications == en_val;
+                                                            ui.vertical_centered(|ui| {
+                                                                let (lap_r, l_resp) = ui.allocate_exact_size(Vec2::new(148.0, 92.0), Sense::click());
+                                                                let stroke_c = if selected {
+                                                                    pal.primary_hover
+                                                                } else {
+                                                                    pal.border
+                                                                };
+                                                                let scr_r = Rect::from_min_max(Pos2::new(lap_r.left() + 14.0, lap_r.top() + 6.0), Pos2::new(lap_r.right() - 14.0, lap_r.bottom() - 16.0));
+                                                                ui.painter().rect_stroke(scr_r, Rounding::same(4.0), Stroke::new(1.8_f32, stroke_c));
+                                                                let base_r = Rect::from_min_max(Pos2::new(lap_r.left() + 6.0, lap_r.bottom() - 16.0), Pos2::new(lap_r.right() - 6.0, lap_r.bottom() - 6.0));
+                                                                ui.painter().rect_stroke(base_r, Rounding::same(4.0), Stroke::new(1.8_f32, stroke_c));
+                                                                if en_val {
+                                                                    let toast_r = Rect::from_min_size(Pos2::new(scr_r.right() - 62.0, scr_r.top() + 8.0), Vec2::new(54.0, 22.0));
+                                                                    ui.painter().rect_filled(toast_r, Rounding::same(3.0), pal.bg_selected);
+                                                                }
+                                                                ui.add_space(6.0);
+                                                                let r_click = ui.radio(selected, label).clicked();
+                                                                if l_resp.on_hover_cursor(CursorIcon::PointingHand).clicked() || r_click {
+                                                                    self.settings.enable_notifications = en_val;
                                                                     if en_val {
-                                                                        let toast_r =
-                                                                            Rect::from_min_size(
-                                                                                Pos2::new(
-                                                                                    scr_r.right()
-                                                                                        - 62.0,
-                                                                                    scr_r.top() + 8.0,
-                                                                                ),
-                                                                                Vec2::new(54.0, 22.0),
-                                                                            );
-                                                                        ui.painter().rect_filled(
-                                                                            toast_r,
-                                                                            Rounding::same(3.0),
-                                                                            pal.bg_selected,
-                                                                        );
+                                                                        if let Some(tx) = WORKER_TX.get() {
+                                                                            let _ = tx.send(WorkerCmd::RequestNotificationAuthorization);
+                                                                        }
                                                                     }
-                                                                    ui.add_space(6.0);
-                                                                    let r_click =
-                                                                        ui.radio(selected, label).clicked();
-                                                                    if l_resp
-                                                                        .on_hover_cursor(
-                                                                            CursorIcon::PointingHand,
-                                                                        )
-                                                                        .clicked()
-                                                                        || r_click
-                                                                    {
-                                                                        self.settings
-                                                                            .enable_notifications =
-                                                                            en_val;
-                                                                    }
-                                                                },
-                                                            );
+                                                                }
+                                                            });
                                                         }
                                                     });
                                                 });
@@ -1629,75 +1340,6 @@ impl ZaloGuiApp {
                                                     });
                                                 });
                                         }
-                                        SettingsTab::Utilities => {
-                                            ui.label(RichText::new("Gợi ý Sticker").color(pal.text_primary).size(13.5).strong());
-                                            ui.add_space(6.0);
-                                            egui::Frame::none()
-                                                .fill(pal.bg_elevated)
-                                                .stroke(Stroke::new(1.0_f32, pal.border))
-                                                .rounding(Rounding::same(8.0))
-                                                .inner_margin(Margin::symmetric(14.0, 10.0))
-                                                .show(ui, |ui| {
-                                                    ui.horizontal(|ui| {
-                                                        ui.label(RichText::new("Hiện gợi ý Sticker phù hợp với nội dung tin nhắn đang soạn").color(pal.text_primary).size(13.2));
-                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                                            render_toggle_switch(ui, &mut self.settings.suggest_stickers_while_typing, pal);
-                                                        });
-                                                    });
-                                                });
-                                            ui.add_space(16.0);
-
-                                            ui.label(RichText::new("Gợi ý @").color(pal.text_primary).size(13.5).strong());
-                                            ui.add_space(6.0);
-                                            egui::Frame::none()
-                                                .fill(pal.bg_elevated)
-                                                .stroke(Stroke::new(1.0_f32, pal.border))
-                                                .rounding(Rounding::same(8.0))
-                                                .inner_margin(Margin::symmetric(14.0, 12.0))
-                                                .show(ui, |ui| {
-                                                    // Row 1: Gợi ý nhắc tên
-                                                    ui.horizontal(|ui| {
-                                                        let (b_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
-                                                        ui.painter().circle_filled(b_rect.center(), 15.0, Color32::from_rgb(224, 108, 117));
-                                                        draw_lucide_icon(ui.painter(), b_rect.center(), lucide::USER, 15.0, Color32::WHITE);
-                                                        ui.vertical(|ui| {
-                                                            ui.label(RichText::new("Gợi ý nhắc tên").color(pal.text_primary).size(13.2).strong());
-                                                            ui.label(RichText::new("Gợi ý nhắc tên theo nội dung đang soạn").color(pal.text_secondary).size(11.8));
-                                                        });
-                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                                            render_toggle_switch(ui, &mut self.settings.suggest_mentions, pal);
-                                                        });
-                                                    });
-                                                    ui.add_space(10.0);
-                                                    // Row 2: Tìm kiếm GIF
-                                                    ui.horizontal(|ui| {
-                                                        let (b_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
-                                                        ui.painter().circle_filled(b_rect.center(), 15.0, Color32::from_rgb(82, 139, 255));
-                                                        ui.painter().text(b_rect.center(), egui::Align2::CENTER_CENTER, "GIF", FontId::proportional(10.5), Color32::WHITE);
-                                                        ui.vertical(|ui| {
-                                                            ui.label(RichText::new("Tìm kiếm GIF").color(pal.text_primary).size(13.2).strong());
-                                                            ui.label(RichText::new("Gõ từ khóa để tìm GIF").color(pal.text_secondary).size(11.8));
-                                                        });
-                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                                            render_toggle_switch(ui, &mut self.settings.enable_gif_search, pal);
-                                                        });
-                                                    });
-                                                    ui.add_space(10.0);
-                                                    // Row 3: Tìm sticker
-                                                    ui.horizontal(|ui| {
-                                                        let (b_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
-                                                        ui.painter().circle_filled(b_rect.center(), 15.0, Color32::from_rgb(152, 88, 178));
-                                                        draw_lucide_icon(ui.painter(), b_rect.center(), lucide::SMILE, 15.5, Color32::WHITE);
-                                                        ui.vertical(|ui| {
-                                                            ui.label(RichText::new("Tìm sticker").color(pal.text_primary).size(13.2).strong());
-                                                            ui.label(RichText::new("Gõ từ khóa để tìm Sticker").color(pal.text_secondary).size(11.8));
-                                                        });
-                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                                            render_toggle_switch(ui, &mut self.settings.enable_sticker_keyword_search, pal);
-                                                        });
-                                                    });
-                                                });
-                                        }
                                         SettingsTab::Update => {
                                             let cur_ver = env!("CARGO_PKG_VERSION");
                                             let info_opt = self.update_info.clone();
@@ -1718,7 +1360,7 @@ impl ZaloGuiApp {
                                                 .inner_margin(Margin::symmetric(18.0, 16.0))
                                                 .show(ui, |ui| {
                                                     let card_avail_w =
-                                                        (inner_w - 36.0).max(280.0);
+                                                        (ui.available_width() - 36.0).max(280.0);
                                                     ui.set_min_width(card_avail_w);
                                                     ui.set_max_width(card_avail_w);
 
@@ -2124,10 +1766,77 @@ impl ZaloGuiApp {
                                                     }
                                                 });
                                         }
-                                            }
-                                        });
-                                    });
-                            });
+                                        SettingsTab::Utilities => {
+                                            ui.label(RichText::new("Gợi ý Sticker").color(pal.text_primary).size(13.5).strong());
+                                            ui.add_space(6.0);
+                                            egui::Frame::none()
+                                                .fill(pal.bg_elevated)
+                                                .stroke(Stroke::new(1.0_f32, pal.border))
+                                                .rounding(Rounding::same(8.0))
+                                                .inner_margin(Margin::symmetric(14.0, 10.0))
+                                                .show(ui, |ui| {
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(RichText::new("Hiện gợi ý Sticker phù hợp với nội dung tin nhắn đang soạn").color(pal.text_primary).size(13.2));
+                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                                            render_toggle_switch(ui, &mut self.settings.suggest_stickers_while_typing, pal);
+                                                        });
+                                                    });
+                                                });
+                                            ui.add_space(16.0);
+
+                                            ui.label(RichText::new("Gợi ý @").color(pal.text_primary).size(13.5).strong());
+                                            ui.add_space(6.0);
+                                            egui::Frame::none()
+                                                .fill(pal.bg_elevated)
+                                                .stroke(Stroke::new(1.0_f32, pal.border))
+                                                .rounding(Rounding::same(8.0))
+                                                .inner_margin(Margin::symmetric(14.0, 12.0))
+                                                .show(ui, |ui| {
+                                                    // Row 1: Gợi ý nhắc tên
+                                                    ui.horizontal(|ui| {
+                                                        let (b_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
+                                                        ui.painter().circle_filled(b_rect.center(), 15.0, Color32::from_rgb(224, 108, 117));
+                                                        draw_lucide_icon(ui.painter(), b_rect.center(), lucide::USER, 15.0, Color32::WHITE);
+                                                        ui.vertical(|ui| {
+                                                            ui.label(RichText::new("Gợi ý nhắc tên").color(pal.text_primary).size(13.2).strong());
+                                                            ui.label(RichText::new("Gợi ý nhắc tên theo nội dung đang soạn").color(pal.text_secondary).size(11.8));
+                                                        });
+                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                                            render_toggle_switch(ui, &mut self.settings.suggest_mentions, pal);
+                                                        });
+                                                    });
+                                                    ui.add_space(10.0);
+                                                    // Row 2: Tìm kiếm GIF
+                                                    ui.horizontal(|ui| {
+                                                        let (b_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
+                                                        ui.painter().circle_filled(b_rect.center(), 15.0, Color32::from_rgb(82, 139, 255));
+                                                        ui.painter().text(b_rect.center(), egui::Align2::CENTER_CENTER, "GIF", FontId::proportional(10.5), Color32::WHITE);
+                                                        ui.vertical(|ui| {
+                                                            ui.label(RichText::new("Tìm kiếm GIF").color(pal.text_primary).size(13.2).strong());
+                                                            ui.label(RichText::new("Gõ từ khóa để tìm GIF").color(pal.text_secondary).size(11.8));
+                                                        });
+                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                                            render_toggle_switch(ui, &mut self.settings.enable_gif_search, pal);
+                                                        });
+                                                    });
+                                                    ui.add_space(10.0);
+                                                    // Row 3: Tìm sticker
+                                                    ui.horizontal(|ui| {
+                                                        let (b_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
+                                                        ui.painter().circle_filled(b_rect.center(), 15.0, Color32::from_rgb(152, 88, 178));
+                                                        draw_lucide_icon(ui.painter(), b_rect.center(), lucide::SMILE, 15.5, Color32::WHITE);
+                                                        ui.vertical(|ui| {
+                                                            ui.label(RichText::new("Tìm sticker").color(pal.text_primary).size(13.2).strong());
+                                                            ui.label(RichText::new("Gõ từ khóa để tìm Sticker").color(pal.text_secondary).size(11.8));
+                                                        });
+                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                                            render_toggle_switch(ui, &mut self.settings.enable_sticker_keyword_search, pal);
+                                                        });
+                                                    });
+                                                });
+                                        }
+                                    }
+                                });
                         });
                 });
             });
@@ -2177,8 +1886,6 @@ impl ZaloGuiApp {
 
         if !open {
             self.settings_modal_open = false;
-            self.settings_blur_tex = None;
-            self.settings_blur_req_at = None;
             self.settings.save();
         }
     }
@@ -2204,9 +1911,9 @@ impl ZaloGuiApp {
         let default_w = if call.is_video { 820.0 } else { 560.0 };
         let default_h = if call.is_video { 640.0 } else { 520.0 };
         let win_title = if call.is_video {
-            format!("Zalo Video Call — {}", call.partner_name)
+            format!("Zalo Video Call · {}", call.partner_name)
         } else {
-            format!("Zalo Voice Call — {}", call.partner_name)
+            format!("Zalo Voice Call · {}", call.partner_name)
         };
 
         let call_ava = self
@@ -3030,7 +2737,7 @@ impl ZaloGuiApp {
                                         .max(120.0);
                                 let tile_h = inner.height();
 
-                                for idx in 0..n_tiles {
+                                for (idx, (p_name, p_ava)) in group_remotes.iter().enumerate().take(n_tiles) {
                                     let tx_left =
                                         inner.left() + (idx as f32) * (tile_w + gap);
                                     let tile_rect = Rect::from_min_size(
@@ -3053,7 +2760,6 @@ impl ZaloGuiApp {
                                     } else {
                                         format!("call_remote_video_{idx}")
                                     };
-                                    let (ref p_name, ref p_ava) = group_remotes[idx];
                                     let has_vid = if let Some(vtex) =
                                         self.sticker_textures.get(&tex_key)
                                     {
@@ -3432,80 +3138,6 @@ impl ZaloGuiApp {
             }
         } else if self.active_call.is_some() {
             self.active_call = Some(call);
-        }
-    }
-
-    pub(super) fn render_wipe_confirm(&mut self, ctx: &egui::Context, pal: &ThemePalette) {
-        if !self.confirm_local_wipe {
-            return;
-        }
-        let mut open = true;
-        let mut confirm = false;
-        let mut cancel = false;
-        egui::Window::new("Xoá dữ liệu tin nhắn cục bộ")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(380.0, 150.0))
-            .show(ctx, |ui| {
-                ui.label(
-                    RichText::new(
-                        "Xoá zalo_history.db và threads_cache.json trên máy này. \
-                         Không thể hoàn tác, và tin nhắn cũ chỉ tải lại được từ đám mây Zalo.",
-                    )
-                    .size(12.5)
-                    .color(pal.text_secondary),
-                );
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new("Phiên đăng nhập trong session.json giữ nguyên.")
-                        .size(12.0)
-                        .color(pal.text_muted),
-                );
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_sized(
-                            [140.0, 30.0],
-                            egui::Button::new(
-                                RichText::new("Xoá dữ liệu")
-                                    .size(12.5)
-                                    .color(pal.danger)
-                                    .strong(),
-                            )
-                            .fill(pal.danger.linear_multiply(0.12))
-                            .rounding(Rounding::same(7.0)),
-                        )
-                        .on_hover_cursor(CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        confirm = true;
-                    }
-                    if ui
-                        .add_sized(
-                            [100.0, 30.0],
-                            egui::Button::new(
-                                RichText::new("Huỷ").size(12.5).color(pal.text_secondary),
-                            )
-                            .fill(pal.bg_input)
-                            .stroke(Stroke::new(1.0_f32, pal.border))
-                            .rounding(Rounding::same(7.0)),
-                        )
-                        .on_hover_cursor(CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        cancel = true;
-                    }
-                });
-            });
-        if confirm {
-            self.confirm_local_wipe = false;
-            if let Some(tx) = WORKER_TX.get() {
-                let _ = tx.send(WorkerCmd::WipeLocalData);
-            }
-        } else if cancel || !open {
-            self.confirm_local_wipe = false;
         }
     }
 
@@ -4235,87 +3867,6 @@ impl ZaloGuiApp {
                     ui.end_row();
                 });
             });
-    }
-}
-
-/// Build a frosted Gaussian-blurred backdrop `ColorImage` from a viewport screenshot:
-/// downsamples by 3x, applies 3 separable horizontal + vertical box-blur passes (`~14px` effective
-/// Gaussian radius), and blends a dark frosted-glass tint so the Settings modal stands out sharply.
-fn build_blurred_backdrop_image(src: &egui::ColorImage, is_dark: bool) -> egui::ColorImage {
-    let sw = src.size[0].max(1);
-    let sh = src.size[1].max(1);
-    let scale = 3usize;
-    let dw = (sw / scale).max(16);
-    let dh = (sh / scale).max(16);
-
-    let mut buf: Vec<[u32; 3]> = vec![[0, 0, 0]; dw * dh];
-    for y in 0..dh {
-        let sy = (y * scale).min(sh - 1);
-        for x in 0..dw {
-            let sx = (x * scale).min(sw - 1);
-            let px = src.pixels[sy * sw + sx];
-            buf[y * dw + x] = [px.r() as u32, px.g() as u32, px.b() as u32];
-        }
-    }
-
-    let radius = 4isize;
-    let mut tmp = vec![[0u32; 3]; dw * dh];
-    for _ in 0..3 {
-        // Horizontal pass
-        for y in 0..dh {
-            let row_off = y * dw;
-            for x in 0..dw {
-                let mut sr = 0u32;
-                let mut sg = 0u32;
-                let mut sb = 0u32;
-                let mut cnt = 0u32;
-                for dx in -radius..=radius {
-                    let nx = (x as isize + dx).clamp(0, dw as isize - 1) as usize;
-                    let c = buf[row_off + nx];
-                    sr += c[0];
-                    sg += c[1];
-                    sb += c[2];
-                    cnt += 1;
-                }
-                tmp[row_off + x] = [sr / cnt, sg / cnt, sb / cnt];
-            }
-        }
-        // Vertical pass
-        for y in 0..dh {
-            for x in 0..dw {
-                let mut sr = 0u32;
-                let mut sg = 0u32;
-                let mut sb = 0u32;
-                let mut cnt = 0u32;
-                for dy in -radius..=radius {
-                    let ny = (y as isize + dy).clamp(0, dh as isize - 1) as usize;
-                    let c = tmp[ny * dw + x];
-                    sr += c[0];
-                    sg += c[1];
-                    sb += c[2];
-                    cnt += 1;
-                }
-                buf[y * dw + x] = [sr / cnt, sg / cnt, sb / cnt];
-            }
-        }
-    }
-
-    let (tr, tg, tb, alpha_num) = if is_dark {
-        (8u32, 11u32, 18u32, 56u32) // 56% dark frosted tint
-    } else {
-        (15u32, 23u32, 42u32, 44u32) // 44% slate frosted tint
-    };
-    let keep = 100u32 - alpha_num;
-    let mut out_pixels = Vec::with_capacity(dw * dh);
-    for c in buf {
-        let r = ((c[0] * keep + tr * alpha_num) / 100).min(255) as u8;
-        let g = ((c[1] * keep + tg * alpha_num) / 100).min(255) as u8;
-        let b = ((c[2] * keep + tb * alpha_num) / 100).min(255) as u8;
-        out_pixels.push(Color32::from_rgb(r, g, b));
-    }
-    egui::ColorImage {
-        size: [dw, dh],
-        pixels: out_pixels,
     }
 }
 

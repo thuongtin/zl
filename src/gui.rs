@@ -22,12 +22,12 @@ use crate::qr::QrLogin;
 use crate::session::Session;
 
 mod emoji_text;
-mod history;
 mod group_history;
+mod history;
 mod media_preview;
 mod messages;
-mod navigation;
 mod modals;
+mod navigation;
 mod persistence;
 mod phone_history;
 mod soak;
@@ -574,8 +574,6 @@ pub struct ZaloGuiApp {
     settings_modal_open: bool,
     settings_tab: SettingsTab,
     settings: AppSettings,
-    settings_blur_tex: Option<TextureHandle>,
-    settings_blur_req_at: Option<std::time::Instant>,
     update_checking: bool,
     update_downloading: bool,
     update_progress: Option<(u64, u64)>,
@@ -834,8 +832,6 @@ impl ZaloGuiApp {
             settings_modal_open: false,
             settings_tab: SettingsTab::General,
             settings: loaded_settings,
-            settings_blur_tex: None,
-            settings_blur_req_at: None,
             update_checking: false,
             update_downloading: false,
             update_progress: None,

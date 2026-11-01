@@ -34,6 +34,7 @@ crossterm = "0.28"
 rusqlite = { version = "0.32", features = ["bundled"] }
 cpal = "0.15"
 opus = "0.3"
+unicode-segmentation = "1.12"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 [lib]

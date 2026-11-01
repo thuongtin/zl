@@ -1174,7 +1174,7 @@ pub(super) fn render_message_body(
     }
 
     let Some((caption, url, domain)) = extract_message_link_view(msg) else {
-        ui.add(egui::Label::new(RichText::new(&msg.text).color(text_col).size(14.0)).wrap());
+        super::emoji_text::show(ui, &msg.text, 14.0, text_col, max_text_width);
         return None;
     };
 

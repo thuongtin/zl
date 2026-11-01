@@ -1,0 +1,913 @@
+{
+  "source": {
+    "member": "pc-dist/lazy/default-login-main-startup-shared-worker-znotification.d9141cdf23123a5c2330.js",
+    "member_sha256": "0a5a08a2a1d074c827d2b1826f8434fc04e243a1daa0a03a376353e54cdd2466",
+    "start_byte": 16070826,
+    "end_byte_exclusive": 16071935,
+    "span_sha256": "cfcdd4f1ec824e46c18ee854bedf9b410a3181b08c253c5c471b91f5c8a05500"
+  },
+  "asar_sha256": "ebb10234e499eb9046663a26f4ee70e9c29f53e0a7f0a186117b307872b6b0b1",
+  "cases": [
+    {
+      "id": "empty",
+      "input": "",
+      "tokens": [],
+      "segments": []
+    },
+    {
+      "id": "plain",
+      "input": "Xin chào bạn",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "Xin chào bạn"
+        }
+      ]
+    },
+    {
+      "id": "smile",
+      "input": ":)",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 0,
+          "end_utf16": 2
+        }
+      ]
+    },
+    {
+      "id": "longest",
+      "input": ":))",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":))",
+            "unicode": ":))"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":))",
+          "unicode": ":))",
+          "start_utf16": 0,
+          "end_utf16": 3
+        }
+      ]
+    },
+    {
+      "id": "adjacent",
+      "input": ":):D",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 2,
+            "data": ":D",
+            "unicode": ":D"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 0,
+          "end_utf16": 2
+        },
+        {
+          "kind": "emoji",
+          "raw": ":D",
+          "unicode": ":D",
+          "start_utf16": 2,
+          "end_utf16": 4
+        }
+      ]
+    },
+    {
+      "id": "adjacent_longest",
+      "input": ":)):D/-heart",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":))",
+            "unicode": ":))"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 3,
+            "data": ":D",
+            "unicode": ":D"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 5,
+            "data": "/-heart",
+            "unicode": "/-heart"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":))",
+          "unicode": ":))",
+          "start_utf16": 0,
+          "end_utf16": 3
+        },
+        {
+          "kind": "emoji",
+          "raw": ":D",
+          "unicode": ":D",
+          "start_utf16": 3,
+          "end_utf16": 5
+        },
+        {
+          "kind": "emoji",
+          "raw": "/-heart",
+          "unicode": "/-heart",
+          "start_utf16": 5,
+          "end_utf16": 12
+        }
+      ]
+    },
+    {
+      "id": "space",
+      "input": "hi :) ok",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 3,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "hi "
+        },
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 3,
+          "end_utf16": 5
+        },
+        {
+          "kind": "text",
+          "raw": " ok"
+        }
+      ]
+    },
+    {
+      "id": "left_attached",
+      "input": "hi:)",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "hi:)"
+        }
+      ]
+    },
+    {
+      "id": "right_attached",
+      "input": ":)hi",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": ":)hi"
+        }
+      ]
+    },
+    {
+      "id": "punctuation_right",
+      "input": ":)!",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": ":)!"
+        }
+      ]
+    },
+    {
+      "id": "punctuation_left",
+      "input": "(:)",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "(:)"
+        }
+      ]
+    },
+    {
+      "id": "tab",
+      "input": "\t:)\t",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "\t:)\t"
+        }
+      ]
+    },
+    {
+      "id": "newline",
+      "input": "\n:)\n",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 1,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "\n"
+        },
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 1,
+          "end_utf16": 3
+        },
+        {
+          "kind": "text",
+          "raw": "\n"
+        }
+      ]
+    },
+    {
+      "id": "carriage_return",
+      "input": "\r:)\r",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "\r:)\r"
+        }
+      ]
+    },
+    {
+      "id": "nbsp",
+      "input": " :) ",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": " :) "
+        }
+      ]
+    },
+    {
+      "id": "escaped",
+      "input": "\\:)",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "\\:)"
+        }
+      ]
+    },
+    {
+      "id": "backticks",
+      "input": "` :) `",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 2,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "` "
+        },
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 2,
+          "end_utf16": 4
+        },
+        {
+          "kind": "text",
+          "raw": " `"
+        }
+      ]
+    },
+    {
+      "id": "url_attached",
+      "input": "https://x.test/:)",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "https://x.test/:)"
+        }
+      ]
+    },
+    {
+      "id": "url_separated",
+      "input": "https://x.test/ :)",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 16,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "https://x.test/ "
+        },
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 16,
+          "end_utf16": 18
+        }
+      ]
+    },
+    {
+      "id": "casefold",
+      "input": "/-HEART :D :HEART:",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": "/-HEART",
+            "unicode": "/-HEART"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 8,
+            "data": ":D",
+            "unicode": ":D"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 11,
+            "data": ":HEART:",
+            "unicode": "❤"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": "/-HEART",
+          "unicode": "/-HEART",
+          "start_utf16": 0,
+          "end_utf16": 7
+        },
+        {
+          "kind": "text",
+          "raw": " "
+        },
+        {
+          "kind": "emoji",
+          "raw": ":D",
+          "unicode": ":D",
+          "start_utf16": 8,
+          "end_utf16": 10
+        },
+        {
+          "kind": "text",
+          "raw": " "
+        },
+        {
+          "kind": "emoji",
+          "raw": ":HEART:",
+          "unicode": "❤",
+          "start_utf16": 11,
+          "end_utf16": 18
+        }
+      ]
+    },
+    {
+      "id": "heart_zalo",
+      "input": "/-heart",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": "/-heart",
+            "unicode": "/-heart"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": "/-heart",
+          "unicode": "/-heart",
+          "start_utf16": 0,
+          "end_utf16": 7
+        }
+      ]
+    },
+    {
+      "id": "heart_unicode_alias",
+      "input": ":heart:",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":heart:",
+            "unicode": "❤"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":heart:",
+          "unicode": "❤",
+          "start_utf16": 0,
+          "end_utf16": 7
+        }
+      ]
+    },
+    {
+      "id": "alias_smile",
+      "input": ":smile:",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":smile:",
+            "unicode": "😄"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":smile:",
+          "unicode": "😄",
+          "start_utf16": 0,
+          "end_utf16": 7
+        }
+      ]
+    },
+    {
+      "id": "alias_unknown",
+      "input": ":not_real_emoji:",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": ":not_real_emoji:"
+        }
+      ]
+    },
+    {
+      "id": "two_spaces",
+      "input": "a  :)  b",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 3,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "a  "
+        },
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 3,
+          "end_utf16": 5
+        },
+        {
+          "kind": "text",
+          "raw": "  b"
+        }
+      ]
+    },
+    {
+      "id": "colon_alias_adjacent",
+      "input": ":heart::smile:",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":heart:",
+            "unicode": "❤"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 7,
+            "data": ":smile:",
+            "unicode": "😄"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":heart:",
+          "unicode": "❤",
+          "start_utf16": 0,
+          "end_utf16": 7
+        },
+        {
+          "kind": "emoji",
+          "raw": ":smile:",
+          "unicode": "😄",
+          "start_utf16": 7,
+          "end_utf16": 14
+        }
+      ]
+    },
+    {
+      "id": "colon_alias_attached",
+      "input": "x:heart:y",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "x:heart:y"
+        }
+      ]
+    },
+    {
+      "id": "zalo_adjacent",
+      "input": "/-heart/-strong",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": "/-heart",
+            "unicode": "/-heart"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 7,
+            "data": "/-strong",
+            "unicode": "/-strong"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": "/-heart",
+          "unicode": "/-heart",
+          "start_utf16": 0,
+          "end_utf16": 7
+        },
+        {
+          "kind": "emoji",
+          "raw": "/-strong",
+          "unicode": "/-strong",
+          "start_utf16": 7,
+          "end_utf16": 15
+        }
+      ]
+    },
+    {
+      "id": "mixed_newline",
+      "input": "A\n/-heart\nB",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 2,
+            "data": "/-heart",
+            "unicode": "/-heart"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "A\n"
+        },
+        {
+          "kind": "emoji",
+          "raw": "/-heart",
+          "unicode": "/-heart",
+          "start_utf16": 2,
+          "end_utf16": 9
+        },
+        {
+          "kind": "text",
+          "raw": "\nB"
+        }
+      ]
+    },
+    {
+      "id": "raw_unicode",
+      "input": "😂 ❤ 👨‍👩‍👧‍👦",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "😂 ❤ 👨‍👩‍👧‍👦"
+        }
+      ]
+    },
+    {
+      "id": "modern_unicode",
+      "input": "❤️ 👍🏽 👩‍💻",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "❤️ 👍🏽 👩‍💻"
+        }
+      ]
+    },
+    {
+      "id": "alias_punctuation",
+      "input": ":heart:,",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": ":heart:,"
+        }
+      ]
+    },
+    {
+      "id": "alias_tab",
+      "input": ":heart:\t:smile:",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": ":heart:\t:smile:"
+        }
+      ]
+    },
+    {
+      "id": "token_before_attached",
+      "input": ":):Dx",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 0,
+          "end_utf16": 2
+        },
+        {
+          "kind": "text",
+          "raw": ":Dx"
+        }
+      ]
+    },
+    {
+      "id": "attached_before_token",
+      "input": "x:):D",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 3,
+            "data": ":D",
+            "unicode": ":D"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "x:)"
+        },
+        {
+          "kind": "emoji",
+          "raw": ":D",
+          "unicode": ":D",
+          "start_utf16": 3,
+          "end_utf16": 5
+        }
+      ]
+    },
+    {
+      "id": "uppercase_short",
+      "input": ":P ;D B-)",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 0,
+            "data": ":P",
+            "unicode": ":P"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 3,
+            "data": ";D",
+            "unicode": ";D"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 6,
+            "data": "B-)",
+            "unicode": "B-)"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "emoji",
+          "raw": ":P",
+          "unicode": ":P",
+          "start_utf16": 0,
+          "end_utf16": 2
+        },
+        {
+          "kind": "text",
+          "raw": " "
+        },
+        {
+          "kind": "emoji",
+          "raw": ";D",
+          "unicode": ";D",
+          "start_utf16": 3,
+          "end_utf16": 5
+        },
+        {
+          "kind": "text",
+          "raw": " "
+        },
+        {
+          "kind": "emoji",
+          "raw": "B-)",
+          "unicode": "B-)",
+          "start_utf16": 6,
+          "end_utf16": 9
+        }
+      ]
+    },
+    {
+      "id": "crlf",
+      "input": "A\r\n:)\r\nB",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "A\r\n:)\r\nB"
+        }
+      ]
+    },
+    {
+      "id": "backtick_attached",
+      "input": "`: )`",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "`: )`"
+        }
+      ]
+    },
+    {
+      "id": "adjacent_surrounded",
+      "input": "a :):D b",
+      "tokens": [
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 2,
+            "data": ":)",
+            "unicode": ":)"
+          }
+        },
+        {
+          "type": "EMOJI_TOKEN_V2",
+          "value": {
+            "index": 4,
+            "data": ":D",
+            "unicode": ":D"
+          }
+        }
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "a "
+        },
+        {
+          "kind": "emoji",
+          "raw": ":)",
+          "unicode": ":)",
+          "start_utf16": 2,
+          "end_utf16": 4
+        },
+        {
+          "kind": "emoji",
+          "raw": ":D",
+          "unicode": ":D",
+          "start_utf16": 4,
+          "end_utf16": 6
+        },
+        {
+          "kind": "text",
+          "raw": " b"
+        }
+      ]
+    },
+    {
+      "id": "slash_unknown",
+      "input": "/-unknown",
+      "tokens": [],
+      "segments": [
+        {
+          "kind": "text",
+          "raw": "/-unknown"
+        }
+      ]
+    }
+  ]
+}

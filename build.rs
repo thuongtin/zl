@@ -2,6 +2,23 @@
 //! by emitting a standard COFF/Win32 `.res` file in `OUT_DIR` without requiring external `rc.exe`.
 
 fn main() {
+    // Artwork is a local opt-in input, never downloaded or extracted by Cargo.
+    println!("cargo:rerun-if-env-changed=ZL_EMOJI_PACK");
+    let bytes = if let Some(path) = std::env::var_os("ZL_EMOJI_PACK") {
+        println!(
+            "cargo:rerun-if-changed={}",
+            std::path::Path::new(&path).display()
+        );
+        std::fs::read(path).unwrap_or_else(|error| {
+            println!("cargo:warning=Emoji pack unavailable: {error}; using Unicode fallback");
+            Vec::new()
+        })
+    } else {
+        Vec::new()
+    };
+    // Always replace the output so disabling the opt-in cannot retain stale bytes.
+    let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    std::fs::write(output.join("emoji-sprites.bin"), bytes).expect("Write emoji pack");
     println!("cargo:rerun-if-changed=src/assets/app_icon.ico");
     println!("cargo:rerun-if-changed=src/assets/app_icon.png");
 

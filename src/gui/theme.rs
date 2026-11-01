@@ -742,7 +742,9 @@ pub(super) fn render_toggle_switch(
     resp
 }
 
-static CJK_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+fn cjk_font_key() -> egui::Id {
+    egui::Id::new("cjk-font-initialized")
+}
 
 fn is_cjk(c: char) -> bool {
     matches!(c as u32,
@@ -753,19 +755,21 @@ fn is_cjk(c: char) -> bool {
 /// Load the CJK fallback the first time Han / Kana / Hangul text shows up. msyh.ttc alone is
 /// ~20 MB held in memory for the whole run, which a Vietnamese-only user never needs.
 pub(super) fn ensure_cjk_font<'a>(ctx: &egui::Context, mut texts: impl Iterator<Item = &'a str>) {
-    use std::sync::atomic::Ordering;
-    if CJK_LOADED.load(Ordering::Relaxed) || !texts.any(|t| t.chars().any(is_cjk)) {
+    if ctx.data_mut(|data| data.get_temp::<bool>(cjk_font_key()).unwrap_or(false))
+        || !texts.any(|t| t.chars().any(is_cjk))
+    {
         return;
     }
-    CJK_LOADED.store(true, Ordering::Relaxed);
-    build_fonts(ctx, true);
+    // Each context owns its font atlas; one window must not suppress another window's fallback.
+    ctx.data_mut(|data| data.insert_temp(cjk_font_key(), true));
+    ctx.set_fonts(custom_font_definitions_with_cjk(true));
 }
 
-pub(super) fn setup_custom_fonts(ctx: &egui::Context) {
-    build_fonts(ctx, false);
+fn custom_font_definitions() -> egui::FontDefinitions {
+    custom_font_definitions_with_cjk(false)
 }
 
-fn build_fonts(ctx: &egui::Context, with_cjk: bool) {
+fn custom_font_definitions_with_cjk(with_cjk: bool) -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
 
     // 1. Embed official Lucide Icon Font (vector glyphs for all UI icons)
@@ -775,14 +779,22 @@ fn build_fonts(ctx: &egui::Context, with_cjk: bool) {
         egui::FontData::from_static(LUCIDE_BYTES),
     );
 
-    // 2. Bundled Vietnamese sans-serif so diacritics render identically on every OS.
-    //    System fonts below are only an optional aesthetic override, never a requirement.
-    const BUNDLED_SANS: &[u8] = include_bytes!("../assets/fonts/BeVietnamPro-Regular.ttf");
     fonts.font_data.insert(
-        "bundled_sans".to_owned(),
-        egui::FontData::from_static(BUNDLED_SANS),
+        "emoji_slot".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/emojis/zalo/slot.ttf")),
+    );
+    fonts.families.insert(
+        egui::FontFamily::Name("emoji_slot".into()),
+        vec!["emoji_slot".to_owned()],
     );
 
+    // Keep a bundled Vietnamese fallback without replacing the custom emoji families.
+    fonts.font_data.insert(
+        "bundled_sans".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/BeVietnamPro-Regular.ttf")),
+    );
+
+    // 2. Load system Vietnamese sans-serif font
     let font_candidates = [
         "C:\\Windows\\Fonts\\segoeui.ttf",
         "C:\\Windows\\Fonts\\arial.ttf",
@@ -790,8 +802,6 @@ fn build_fonts(ctx: &egui::Context, with_cjk: bool) {
         "/System/Library/Fonts/Supplemental/Arial.ttf",
         "/System/Library/Fonts/Supplemental/Tahoma.ttf",
         "/Library/Fonts/Arial.ttf",
-        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
-        "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -832,32 +842,185 @@ fn build_fonts(ctx: &egui::Context, with_cjk: bool) {
         }
     }
 
-    // Fallback order: bundled sans guarantees Vietnamese coverage, CJK supplies Han/Kana/Hangul, Lucide supplies icon glyphs
+    // Lucide precedes fallback fonts so private-use UI icons keep their original glyphs.
+    // The bundled fallbacks contain TrueType outlines usable by egui/ab_glyph.
+    // Apple Color Emoji uses bitmap/color tables and is not an outline fallback.
+    for (name, bytes) in [
+        (
+            "noto_sans_math",
+            include_bytes!("../assets/fonts/NotoSansMath-Regular.ttf").as_slice(),
+        ),
+        (
+            "noto_emoji_outline",
+            include_bytes!("../assets/fonts/NotoEmoji-Variable.ttf").as_slice(),
+        ),
+    ] {
+        fonts
+            .font_data
+            .insert(name.to_owned(), egui::FontData::from_static(bytes));
+    }
+
     let prop = fonts
         .families
         .entry(egui::FontFamily::Proportional)
         .or_default();
-    prop.insert(0, "bundled_sans".to_owned());
     if fonts.font_data.contains_key("vietnamese_font") {
-        prop.insert(1, "vietnamese_font".to_owned());
+        prop.insert(0, "vietnamese_font".to_owned());
+        prop.push("lucide_font".to_owned());
+    } else {
+        prop.insert(0, "lucide_font".to_owned());
     }
-    if fonts.font_data.contains_key("cjk_font") {
-        prop.push("cjk_font".to_owned());
-    }
-    prop.push("lucide_font".to_owned());
 
     let mono = fonts
         .families
         .entry(egui::FontFamily::Monospace)
         .or_default();
-    mono.push("bundled_sans".to_owned());
     if fonts.font_data.contains_key("vietnamese_font") {
         mono.push("vietnamese_font".to_owned());
     }
-    if fonts.font_data.contains_key("cjk_font") {
-        mono.push("cjk_font".to_owned());
-    }
     mono.push("lucide_font".to_owned());
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        let fallbacks = fonts.families.entry(family).or_default();
+        if fonts.font_data.contains_key("cjk_font") {
+            fallbacks.push("cjk_font".to_owned());
+        }
+        fallbacks.push("bundled_sans".to_owned());
+        fallbacks.push("noto_sans_math".to_owned());
+        fallbacks.push("noto_emoji_outline".to_owned());
+    }
+    let mut bold = fonts
+        .families
+        .get(&egui::FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    for path in [
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "C:\\Windows\\Fonts\\segoeuib.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ] {
+        if let Ok(data) = std::fs::read(path) {
+            fonts
+                .font_data
+                .insert("sidebar_bold".into(), egui::FontData::from_owned(data));
+            bold.insert(0, "sidebar_bold".into());
+            break;
+        }
+    }
+    fonts
+        .families
+        .insert(egui::FontFamily::Name("sidebar-semibold".into()), bold);
+    fonts
+}
 
-    ctx.set_fonts(fonts);
+pub(super) fn setup_custom_fonts(ctx: &egui::Context) {
+    ctx.data_mut(|data| data.insert_temp(cjk_font_key(), false));
+    ctx.set_fonts(custom_font_definitions());
+}
+
+#[cfg(test)]
+mod unicode_font_tests {
+    use super::*;
+
+    // Synthetic fixture using the exact non-ASCII codepoints of the reported message.
+    const STYLED: &str = "𝗔𝗕𝗘𝗚𝗛𝗜𝗟𝗦𝗮𝗲𝗹𝗻𝗼𝘁𝘄 𝟬𝟭";
+    const VIETNAMESE: &str = "Tiếng Việt: Nguyễn, Đặng, Ắ ằ ẵ ặ ế ệ ỡ ự ỵ";
+    const SYMBOLS: &str = "🎃💥 ∑ ∫ ∞ → ≤ ≥";
+
+    fn assert_visible_glyphs(ctx: &egui::Context, font: egui::FontId, text: &str) {
+        ctx.fonts(|fonts| {
+            for c in text.chars().filter(|c| !c.is_whitespace()) {
+                assert!(
+                    fonts.has_glyph(&font, c),
+                    "missing glyph U+{:04X}",
+                    c as u32
+                );
+            }
+            let galley = fonts.layout_no_wrap(text.to_owned(), font, Color32::WHITE);
+            let actual: String = galley
+                .rows
+                .iter()
+                .flat_map(|row| row.glyphs.iter().map(|g| g.chr))
+                .collect();
+            assert_eq!(actual, text, "layout must preserve original Unicode text");
+            for glyph in galley
+                .rows
+                .iter()
+                .flat_map(|row| &row.glyphs)
+                .filter(|g| !g.chr.is_whitespace())
+            {
+                assert!(
+                    !glyph.uv_rect.is_nothing(),
+                    "no rasterized outline U+{:04X}",
+                    glyph.chr as u32
+                );
+                assert!(glyph.advance_width > 0.0);
+            }
+        });
+    }
+
+    #[test]
+    fn cjk_loading_is_lazy_per_context_and_preserves_unicode_families() {
+        let first = egui::Context::default();
+        let second = egui::Context::default();
+        for ctx in [&first, &second] {
+            setup_custom_fonts(ctx);
+            ensure_cjk_font(ctx, std::iter::once(VIETNAMESE));
+            assert!(!ctx.data_mut(|data| data.get_temp::<bool>(cjk_font_key()).unwrap()));
+            ensure_cjk_font(ctx, std::iter::once("漢字"));
+            assert!(ctx.data_mut(|data| data.get_temp::<bool>(cjk_font_key()).unwrap()));
+            ctx.begin_pass(egui::RawInput::default());
+            assert_visible_glyphs(ctx, FontId::proportional(16.0), STYLED);
+            assert_visible_glyphs(ctx, FontId::proportional(16.0), lucide::SEARCH);
+            let _ = ctx.end_pass();
+        }
+        let fonts = custom_font_definitions_with_cjk(true);
+        assert!(fonts
+            .families
+            .contains_key(&egui::FontFamily::Name("emoji_slot".into())));
+        assert!(fonts
+            .families
+            .contains_key(&egui::FontFamily::Name("sidebar-semibold".into())));
+    }
+
+    #[test]
+    fn unicode_fallbacks_preserve_styled_text_vietnamese_and_lucide() {
+        let ctx = egui::Context::default();
+        setup_custom_fonts(&ctx);
+        ctx.begin_pass(egui::RawInput::default());
+        for font in [
+            egui::FontId::proportional(16.0),
+            egui::FontId::monospace(16.0),
+        ] {
+            for text in [STYLED, VIETNAMESE, SYMBOLS, lucide::SEARCH, lucide::SEND] {
+                assert_visible_glyphs(&ctx, font.clone(), text);
+            }
+        }
+        let _ = ctx.end_pass();
+    }
+
+    #[test]
+    fn bundled_fonts_rasterize_real_outlines_without_system_fallbacks() {
+        let ctx = egui::Context::default();
+        let mut fonts = custom_font_definitions();
+        // An isolated family prevents a default/system font from masking a broken asset.
+        for name in ["noto_sans_math", "noto_emoji_outline", "lucide_font"] {
+            fonts
+                .families
+                .insert(egui::FontFamily::Name(name.into()), vec![name.to_owned()]);
+        }
+        ctx.set_fonts(fonts);
+        ctx.begin_pass(egui::RawInput::default());
+        for (name, text) in [
+            ("noto_sans_math", STYLED),
+            ("noto_emoji_outline", "🎃💥"),
+            ("lucide_font", "\u{e151}\u{e4f2}"),
+        ] {
+            assert_visible_glyphs(
+                &ctx,
+                egui::FontId::new(18.0, egui::FontFamily::Name(name.into())),
+                text,
+            );
+        }
+        let _ = ctx.end_pass();
+    }
 }

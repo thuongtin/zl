@@ -19,3 +19,5 @@ pub mod tui;
 pub mod ui;
 pub mod unread;
 pub mod voip_log;
+
+pub mod data_dir;

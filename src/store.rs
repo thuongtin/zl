@@ -242,6 +242,8 @@ impl MessageStore {
                 }
             } else {
                 threads.push(Thread {
+                    presentation: Default::default(),
+                    unread: Default::default(),
                     id: st.thread_id.clone(),
                     name: if st.name.is_empty() {
                         format!("Người dùng {}", st.thread_id)
@@ -388,6 +390,8 @@ impl MessageStore {
                     link_desc,
                     link_thumb,
                     link_src,
+
+                    ..Default::default()
                 };
                 if let Some(existing) = t.messages.iter_mut().find(|existing| {
                     (!existing.id.is_empty() && existing.id == cm.id)
@@ -688,6 +692,8 @@ mod tests {
     fn test_persist_threads_and_upsert_thread() {
         let mut store = MessageStore::open(":memory:").unwrap();
         let thread = Thread {
+            presentation: Default::default(),
+            unread: Default::default(),
             id: "t_test".into(),
             name: "Test Thread".into(),
             preview: "Preview".into(),

@@ -336,6 +336,8 @@ pub(super) fn spawn_session_worker(
                                                 if let Some(li) = s_snap.login.as_ref() {
                                                     if !li.send2me_id.is_empty() {
                                                         ws_threads.push(Thread {
+                                                            presentation: Default::default(),
+                                                            unread: Default::default(),
                                                             id: li.send2me_id.clone(),
                                                             name: "Cloud của tôi (Lưu trữ)"
                                                                 .into(),
@@ -777,6 +779,8 @@ pub(super) fn spawn_session_worker(
                                     let mut temp_threads: Vec<Thread> = known_threads
                                         .into_iter()
                                         .map(|(id, name, is_group)| Thread {
+                                            presentation: Default::default(),
+                                            unread: Default::default(),
                                             id,
                                             name,
                                             preview: String::new(),
@@ -883,6 +887,8 @@ pub(super) fn spawn_session_worker(
                                         .map(|l| !l.send2me_id.is_empty() && l.send2me_id == group_id)
                                         .unwrap_or(false);
                                     let t = Thread {
+                                        presentation: Default::default(),
+                                        unread: Default::default(),
                                         id: group_id.clone(),
                                         name: String::new(),
                                         preview: String::new(),

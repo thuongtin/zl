@@ -327,3 +327,4 @@ pub mod read_receipts;
 pub mod store_v2;
 pub mod reaction_journal;
 pub mod original_reactions;
+pub mod runtime_state;
